@@ -1,0 +1,18 @@
+@import '../styles/tokens.css';
+@import '../styles/utilities.css';
+@import '../styles/forms.css';
+@import '../styles/tables.css';
+@import '../styles/modals.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}

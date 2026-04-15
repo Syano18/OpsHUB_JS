@@ -1,0 +1,457 @@
+.page {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  overflow: hidden;
+}
+
+.toolbarCard,
+.tableCard {
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background: var(--color-surface);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
+}
+
+.toolbarCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+}
+
+.toolbarInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.headingBlock {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 36px;
+  line-height: 1.1;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.searchWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.searchField {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-surface) 92%, white 8%);
+}
+
+.searchIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.searchInput {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.resultText {
+  margin: 10px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.actionGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 18px;
+  border-radius: 16px;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.primaryButton:hover,
+.secondaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+
+.primaryButton {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: white;
+  box-shadow: 0 16px 28px rgba(20, 184, 166, 0.22);
+}
+
+.secondaryButton {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+}
+
+.secondaryButton:hover {
+  border-color: #14b8a6;
+  background: var(--color-hover);
+}
+
+.exportDialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.exportDialog {
+  width: min(520px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  background: var(--color-surface);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
+  padding: 20px;
+}
+
+.exportDialogHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exportDialogEyebrow {
+  margin: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.exportDialogTitle {
+  margin: 8px 0 0;
+  color: var(--color-text);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.exportDialogClose {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.exportDialogClose:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.exportDialogBody {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.exportDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.exportDropdownField {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.exportDropdownButton {
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent),
+    color-mix(in srgb, var(--color-surface) 92%, white 8%);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.exportDropdownButton:hover {
+  transform: translateY(-1px);
+  border-color: #14b8a6;
+}
+
+.exportDropdownButton:focus-visible {
+  outline: 0;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12);
+}
+
+.exportDropdownValue,
+.exportDropdownPlaceholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exportDropdownPlaceholder {
+  color: var(--color-text-muted);
+}
+
+.exportDropdownIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.exportDropdownMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: 0 20px 42px rgba(15, 23, 42, 0.18);
+}
+
+.exportDropdownScroll {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 8px 8px;
+  max-height: min(320px, calc(100vh - 280px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.exportDropdownScroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.exportDropdownScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.exportDropdownScroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.22);
+  background-clip: content-box;
+}
+
+.exportDropdownOption {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exportDropdownOption:hover,
+.exportDropdownOptionSelected {
+  background: var(--color-hover);
+}
+
+.exportDropdownOptionSelected {
+  font-weight: 700;
+}
+
+.tableCard {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  padding: 20px 20px 0;
+  overflow: hidden;
+}
+
+.rowContextMenu {
+  position: fixed;
+  z-index: 30;
+  min-width: 136px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+}
+
+.rowContextAction {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.rowContextAction:hover {
+  background: var(--color-hover);
+}
+
+.tableWrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+}
+
+.tableWrap :global(table) {
+  min-width: 1080px;
+}
+
+.tableWrap :global(thead th) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+.emptyText,
+.errorText {
+  margin: 0;
+  padding: 24px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.emptyText {
+  color: var(--color-text-muted);
+}
+
+.errorText {
+  color: #b91c1c;
+}
+
+@media (max-width: 960px) {
+  .toolbarCard {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbarInfo {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actionGroup {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 30px;
+  }
+
+  .toolbarCard,
+  .toolbarCard {
+    padding: 16px;
+  }
+
+  .tableCard {
+    padding: 16px 16px 0;
+  }
+
+  .actionGroup {
+    width: 100%;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    flex: 1 1 100%;
+  }
+}
