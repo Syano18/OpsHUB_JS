@@ -1,11 +1,11 @@
 .page {
   flex: 1;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 18px 0 32px;
+  padding: clamp(12px, 2vw, 18px) 0 clamp(20px, 4vw, 32px);
 }
 
 .card {
@@ -14,9 +14,9 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 28px;
+  padding: clamp(18px, 3vw, 28px);
   border: 1px solid var(--color-border);
-  border-radius: 30px;
+  border-radius: clamp(22px, 3vw, 30px);
   background:
     linear-gradient(180deg, rgba(20, 184, 166, 0.07), transparent 18%),
     var(--color-surface);
@@ -44,7 +44,7 @@
 .title {
   margin: 10px 0 0;
   color: var(--color-text);
-  font-size: 34px;
+  font-size: clamp(28px, 4vw, 34px);
   line-height: 1.08;
 }
 
@@ -52,7 +52,7 @@
   max-width: 70ch;
   margin: 12px 0 0;
   color: var(--color-text-muted);
-  font-size: 15px;
+  font-size: clamp(14px, 2vw, 15px);
   line-height: 1.7;
 }
 
@@ -60,6 +60,56 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+
+.confirmDialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.confirmDialog {
+  width: min(460px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  background: var(--color-surface);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
+  padding: 20px;
+}
+
+.confirmDialogEyebrow {
+  margin: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.confirmDialogTitle {
+  margin: 8px 0 0;
+  color: var(--color-text);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.confirmDialogText {
+  margin: 14px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.confirmDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
 }
 
 .successCard {
@@ -140,7 +190,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: clamp(14px, 2.5vw, 18px);
 }
 
 .fieldGroup {
@@ -161,6 +211,7 @@
   color: #dc2626;
 }
 
+.textInput,
 .textArea,
 .searchableControl,
 .multiSelectBox {
@@ -175,13 +226,22 @@
     background 0.2s ease;
 }
 
+.textInput,
 .textArea {
-  min-height: 120px;
   padding: 14px 16px;
-  resize: vertical;
   outline: 0;
 }
 
+.textInput {
+  min-height: 54px;
+}
+
+.textArea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.textInput:focus,
 .textArea:focus,
 .searchableControlOpen,
 .multiSelectBox:focus-within {
@@ -262,13 +322,101 @@
   left: 0;
   right: 0;
   z-index: 20;
-  max-height: 240px;
+  max-height: min(240px, 40vh);
   overflow: auto;
-  padding: 8px;
+  padding: 8px 8px 8px 8px;
   border: 1px solid var(--color-border);
   border-radius: 18px;
   background: var(--color-surface);
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  scrollbar-gutter: stable both-edges;
+}
+
+.optionsPanel::-webkit-scrollbar {
+  width: 16px;
+}
+
+.optionsPanel::-webkit-scrollbar-track {
+  margin-block: 8px;
+  border: 5px solid transparent;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  background-clip: content-box;
+}
+
+.optionsPanel::-webkit-scrollbar-thumb {
+  min-height: 30px;
+  border: 5px solid transparent;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.34);
+  background-clip: content-box;
+}
+
+.optionsPanel::-webkit-scrollbar-button:single-button {
+  display: block;
+  height: 14px;
+  border: 5px solid transparent;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+}
+
+.optionsPanel::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23949494' d='M4 2 7 6H1z'/%3E%3C/svg%3E");
+}
+
+.optionsPanel::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23949494' d='M1 2h6L4 6z'/%3E%3C/svg%3E");
+}
+
+.comboSuggestionGroup {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.comboSuggestionLabel {
+  margin: 0;
+  padding: 0 14px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.comboSuggestionButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.comboSuggestionButton:hover {
+  background: rgba(20, 184, 166, 0.14);
+}
+
+.comboSuggestionBadge {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .optionButton {
@@ -291,11 +439,33 @@
   background: var(--color-hover);
 }
 
+.optionButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.createOptionButton {
+  border: 1px dashed rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.createOptionButton:hover {
+  background: rgba(20, 184, 166, 0.1);
+}
+
 .optionEmpty {
   margin: 0;
   padding: 12px 14px;
   color: var(--color-text-muted);
   font-size: 14px;
+}
+
+.optionHint {
+  margin: 4px 0 0;
+  padding: 0 14px 10px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .tagList {
@@ -366,6 +536,7 @@
   justify-content: space-between;
   gap: 14px;
   padding-top: 4px;
+  flex-wrap: wrap;
 }
 
 .primaryButton,
@@ -416,6 +587,10 @@
     grid-template-columns: 1fr;
   }
 
+  .header {
+    flex-direction: column;
+  }
+
   .actions {
     flex-direction: column-reverse;
   }
@@ -432,11 +607,21 @@
   }
 
   .card {
-    padding: 18px;
-    border-radius: 22px;
+    padding: 16px;
+    border-radius: 20px;
   }
 
   .title {
     font-size: 28px;
+  }
+
+  .searchableControl,
+  .multiInputRow,
+  .textInput {
+    min-height: 50px;
+  }
+
+  .textArea {
+    min-height: 104px;
   }
 }

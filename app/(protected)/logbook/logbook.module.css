@@ -18,19 +18,13 @@
 }
 
 .toolbarCard {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px;
-}
-
-.toolbarInfo {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 20px;
+  display: grid;
+  gap: 8px;
+  padding: 20px 24px;
+  background:
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 50%),
+    var(--color-surface);
 }
 
 .headingBlock {
@@ -41,7 +35,7 @@
   margin: 0;
   color: var(--color-text);
   font-size: 36px;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .subtitle {
@@ -51,12 +45,24 @@
   line-height: 1.6;
 }
 
+.toolbarFilters {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .searchWrap {
   flex: 1;
-  min-width: 0;
+  min-width: 250px;
+  display: flex;
+  gap: 12px;
 }
 
 .searchField {
+  flex: 1;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -65,6 +71,20 @@
   border: 1px solid var(--color-border);
   border-radius: 16px;
   background: color-mix(in srgb, var(--color-surface) 92%, white 8%);
+}
+
+.monthField {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-surface) 92%, white 8%);
+  color: var(--color-text);
+  font: inherit;
+  outline: 0;
 }
 
 .searchIcon {
@@ -160,13 +180,41 @@
   backdrop-filter: blur(6px);
 }
 
+.insertDialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+}
+
 .exportDialog {
   width: min(520px, 100%);
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--color-border);
   border-radius: 24px;
   background: var(--color-surface);
   box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
   padding: 20px;
+}
+
+.insertDialog {
+  width: min(1040px, 100%);
+  max-height: min(92vh, 980px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(20, 184, 166, 0.07), transparent 18%),
+    var(--color-surface);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
 }
 
 .exportDialogHeader {
@@ -176,7 +224,24 @@
   gap: 12px;
 }
 
+.insertDialogHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 0;
+}
+
 .exportDialogEyebrow {
+  margin: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.insertDialogEyebrow {
   margin: 0;
   color: #0f766e;
   font-size: 12px;
@@ -190,6 +255,20 @@
   color: var(--color-text);
   font-size: 24px;
   line-height: 1.2;
+}
+
+.insertDialogTitle {
+  margin: 8px 0 0;
+  color: var(--color-text);
+  font-size: clamp(26px, 3vw, 32px);
+  line-height: 1.15;
+}
+
+.insertDialogText {
+  margin: 12px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .exportDialogClose {
@@ -210,10 +289,95 @@
   color: var(--color-text);
 }
 
+.insertDialogBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin-right: 10px;
+  padding: 20px 12px 24px 24px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.insertDialogBody::-webkit-scrollbar {
+  width: 16px;
+}
+
+.insertDialogBody::-webkit-scrollbar-track {
+  margin-block: 8px;
+  border: 5px solid transparent;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  background-clip: content-box;
+}
+
+.insertDialogBody::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  border: 5px solid transparent;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.34);
+  background-clip: content-box;
+}
+
+.insertDialogBody::-webkit-scrollbar-button:single-button {
+  display: block;
+  height: 14px;
+  border: 5px solid transparent;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+}
+
+.insertDialogBody::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23949494' d='M4 2 7 6H1z'/%3E%3C/svg%3E");
+}
+
+.insertDialogBody::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23949494' d='M1 2h6L4 6z'/%3E%3C/svg%3E");
+}
+
+.recordDialogState {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.recordDialogSpinner {
+  width: 28px;
+  height: 28px;
+  color: #0f766e;
+  animation: recordDialogSpin 0.9s linear infinite;
+}
+
+.recordDialogStateTitle {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.recordDialogStateText {
+  max-width: 48ch;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .exportDialogBody {
+  flex: 1;
+  min-height: 0;
   display: grid;
   gap: 14px;
   margin-top: 20px;
+  overflow: auto;
+  padding-right: 6px;
 }
 
 .exportDialogActions {
@@ -231,9 +395,8 @@
 
 .exportDropdownButton {
   min-height: 50px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   padding: 0 16px;
   border: 1px solid var(--color-border);
@@ -256,21 +419,43 @@
   border-color: #14b8a6;
 }
 
-.exportDropdownButton:focus-visible {
-  outline: 0;
+.exportDropdownButton:focus-within {
   border-color: #14b8a6;
   box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12);
 }
 
-.exportDropdownValue,
-.exportDropdownPlaceholder {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.exportDropdownInput {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
 }
 
-.exportDropdownPlaceholder {
+.exportDropdownInput::placeholder {
   color: var(--color-text-muted);
+}
+
+.exportDropdownToggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.exportDropdownToggle:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
 }
 
 .exportDropdownIcon {
@@ -281,11 +466,9 @@
 }
 
 .exportDropdownMenu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
+  position: static;
   z-index: 2;
+  margin-top: 8px;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 18px;
@@ -339,12 +522,18 @@
   font-weight: 700;
 }
 
+.exportDropdownEmpty {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
 .tableCard {
   position: relative;
   height: 100%;
   min-height: 0;
   display: flex;
-  padding: 20px 20px 0;
   overflow: hidden;
 }
 
@@ -384,7 +573,7 @@
   max-height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 .tableWrap :global(table) {
@@ -415,15 +604,29 @@
   color: #b91c1c;
 }
 
-@media (max-width: 960px) {
-  .toolbarCard {
-    flex-direction: column;
-    align-items: stretch;
+@keyframes recordDialogSpin {
+  from {
+    transform: rotate(0deg);
   }
 
-  .toolbarInfo {
-    flex-direction: column;
-    align-items: stretch;
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 960px) {
+  .insertDialog {
+    max-height: 94vh;
+  }
+
+  .insertDialogHeader,
+  .insertDialogBody {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .toolbarFilters {
+    grid-template-columns: 1fr;
   }
 
   .actionGroup {
@@ -442,8 +645,16 @@
     padding: 16px;
   }
 
+  .toolbarFilters {
+    width: 100%;
+  }
+
   .tableCard {
-    padding: 16px 16px 0;
+    padding: 0;
+  }
+
+  .insertDialogBackdrop {
+    padding: 12px;
   }
 
   .actionGroup {

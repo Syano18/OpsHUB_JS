@@ -9,7 +9,11 @@ import {
 	getRegisteredUserDisplayNames,
 	getUserPermissionByEmail,
 } from '@/lib/user-permissions';
-import { getLogbookModes, getLogbookSections } from '@/lib/logbook-options';
+import {
+	getLogbookAddressees,
+	getLogbookModes,
+	getLogbookSections,
+} from '@/lib/logbook-options';
 
 function normalizeText(value) {
 	const text = String(value ?? '').trim();
@@ -17,6 +21,14 @@ function normalizeText(value) {
 }
 
 function normalizeModeValues(value) {
+	return normalizeListValues(value);
+}
+
+function normalizeAddresseeValues(value) {
+	return normalizeListValues(value);
+}
+
+function normalizeListValues(value) {
 	if (!Array.isArray(value)) {
 		return [];
 	}
@@ -138,13 +150,19 @@ export async function PUT(request, { params }) {
 
 		const payload = await request.json();
 		const particulars = normalizeText(payload.particulars);
-		const addressee = normalizeText(payload.addressee);
+		const addresseeValues = normalizeAddresseeValues(payload.addressee);
 		const transmitter = normalizeText(payload.transmitter);
 		const section = normalizeText(payload.section);
 		const remarks = normalizeText(payload.remarks);
 		const modeValues = normalizeModeValues(payload.modeOfTransmittal);
 
-		if (!particulars || !addressee || !transmitter || !section || !modeValues.length) {
+		if (
+			!particulars ||
+			!addresseeValues.length ||
+			!transmitter ||
+			!section ||
+			!modeValues.length
+		) {
 			return NextResponse.json(
 				{
 					error:
@@ -154,11 +172,24 @@ export async function PUT(request, { params }) {
 			);
 		}
 
-		const [registeredUsers, allowedSections, allowedModes] = await Promise.all([
-			getRegisteredUserDisplayNames(),
-			getLogbookSections(),
-			getLogbookModes(),
-		]);
+		const [registeredUsers, allowedAddressees, allowedSections, allowedModes] =
+			await Promise.all([
+				getRegisteredUserDisplayNames(),
+				getLogbookAddressees(),
+				getLogbookSections(),
+				getLogbookModes(),
+			]);
+
+		if (
+			addresseeValues.some(
+				(addressee) => !allowedAddressees.includes(addressee)
+			)
+		) {
+			return NextResponse.json(
+				{ error: 'Please choose valid addressee values.' },
+				{ status: 400 }
+			);
+		}
 
 		if (!registeredUsers.includes(transmitter)) {
 			return NextResponse.json(
@@ -188,7 +219,7 @@ export async function PUT(request, { params }) {
 
 		await updateDigitalLogbookEntryById(entryId, {
 			particulars,
-			addressee,
+			addressee: addresseeValues.join(', '),
 			transmitter,
 			section,
 			modeOfTransmittal: modeValues.join(', '),

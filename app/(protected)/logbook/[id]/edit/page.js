@@ -2,11 +2,22 @@ import { notFound, redirect } from 'next/navigation';
 import { verifySession } from '@/lib/auth-session';
 import { getDigitalLogbookEntryById } from '@/lib/digital-logbook';
 import { getRegisteredUserDisplayNames } from '@/lib/user-permissions';
-import { getLogbookModes, getLogbookSections } from '@/lib/logbook-options';
+import {
+  getLogbookAddressees,
+  getLogbookModes,
+  getLogbookSections,
+} from '@/lib/logbook-options';
 import NewRecordForm from '../../new/new-record-form';
 import styles from '../../new/new-record-form.module.css';
 
 function splitModeValues(value) {
+  return String(value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitAddresseeValues(value) {
   return String(value ?? '')
     .split(',')
     .map((item) => item.trim())
@@ -31,12 +42,14 @@ export default async function EditLogbookRecordPage({ params }) {
     notFound();
   }
 
-  const [entry, transmitterOptions, sectionOptions, modeOptions] = await Promise.all([
-    getDigitalLogbookEntryById(entryId),
-    getRegisteredUserDisplayNames(),
-    getLogbookSections(),
-    getLogbookModes(),
-  ]);
+  const [entry, transmitterOptions, addresseeOptions, sectionOptions, modeOptions] =
+    await Promise.all([
+      getDigitalLogbookEntryById(entryId),
+      getRegisteredUserDisplayNames(),
+      getLogbookAddressees(),
+      getLogbookSections(),
+      getLogbookModes(),
+    ]);
 
   if (!entry) {
     notFound();
@@ -48,7 +61,7 @@ export default async function EditLogbookRecordPage({ params }) {
 
   const initialFormData = {
     particulars: entry.particulars ?? '',
-    addressee: entry.addressee ?? '',
+    addressee: splitAddresseeValues(entry.addressee),
     transmitter: entry.transmitter ?? '',
     section: entry.section ?? '',
     modeOfTransmittal: splitModeValues(entry.modeOfTransmittal),
@@ -70,6 +83,7 @@ export default async function EditLogbookRecordPage({ params }) {
 
         <NewRecordForm
           transmitterOptions={transmitterOptions}
+          addresseeOptions={addresseeOptions}
           sectionOptions={sectionOptions}
           modeOptions={modeOptions}
           initialFormData={initialFormData}

@@ -1,12 +1,19 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { FiChevronDown, FiDownload, FiPlus, FiSearch } from 'react-icons/fi';
+import { useCallback, useDeferredValue, useEffect, useId, useRef, useState } from 'react';
+import {
+  FiChevronDown,
+  FiDownload,
+  FiLoader,
+  FiPlus,
+  FiSearch,
+} from 'react-icons/fi';
 import ToastStack from '@/components/shared/toast-stack';
+import NewRecordForm from './new/new-record-form';
 import styles from './logbook.module.css';
 
+const BACKDATED_INSERT_ROLES = new Set(['super_admin', 'admin', 'pacd']);
 const CSV_HEADERS = [
   'Timestamp',
   'Reference Number',
@@ -77,6 +84,21 @@ function getEntryDateParts(timestamp) {
   };
 }
 
+function isCurrentMonthEntry(timestamp) {
+  const dateParts = getEntryDateParts(timestamp);
+
+  if (!dateParts) {
+    return false;
+  }
+
+  const now = new Date();
+
+  return (
+    dateParts.year === now.getFullYear() &&
+    dateParts.month === now.getMonth() + 1
+  );
+}
+
 function formatMonthValue(month) {
   return String(month).padStart(2, '0');
 }
@@ -93,29 +115,48 @@ function buildExportFileName(mode, year, month) {
   return 'digital-logbook-all-records.csv';
 }
 
+function canBackdate(role) {
+  return BACKDATED_INSERT_ROLES.has(String(role ?? '').trim().toLowerCase());
+}
+
+function splitStoredListValue(value) {
+  return String(value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function DropdownField({ label, value, options, onChange, placeholder }) {
   const listId = useId();
   const containerRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
 
   const selectedOption = options.find((option) => option.value === value);
+  const inputValue = isOpen ? query : selectedOption?.label ?? '';
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(deferredQuery.trim().toLowerCase())
+  );
 
   useEffect(() => {
     if (!isOpen) {
       return undefined;
     }
 
-    const handlePointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
+      const handlePointerDown = (event) => {
+        if (!containerRef.current?.contains(event.target)) {
+          setIsOpen(false);
+          setQuery('');
+        }
+      };
 
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
+      const handleEscape = (event) => {
+        if (event.key === 'Escape') {
+          setIsOpen(false);
+          setQuery('');
+        }
+      };
 
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleEscape);
@@ -127,60 +168,135 @@ function DropdownField({ label, value, options, onChange, placeholder }) {
   }, [isOpen]);
 
   return (
-    <div ref={containerRef} className={styles.exportDropdownField}>
-      <span className={styles.exportFilterLabel}>{label}</span>
+      <div ref={containerRef} className={styles.exportDropdownField}>
+        <span className={styles.exportFilterLabel}>{label}</span>
 
-      <button
-        type="button"
-        className={styles.exportDropdownButton}
-        onClick={() => setIsOpen((open) => !open)}
-        aria-expanded={isOpen}
-        aria-controls={listId}
-      >
-        <span className={selectedOption ? styles.exportDropdownValue : styles.exportDropdownPlaceholder}>
-          {selectedOption?.label ?? placeholder}
-        </span>
-        <FiChevronDown className={styles.exportDropdownIcon} />
-      </button>
+        <div className={styles.exportDropdownButton}>
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setQuery(nextValue);
+              setIsOpen(true);
 
-      {isOpen ? (
-        <div id={listId} className={styles.exportDropdownMenu} role="listbox">
-          <div className={styles.exportDropdownScroll}>
-            {options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`${styles.exportDropdownOption} ${
-                  option.value === value ? styles.exportDropdownOptionSelected : ''
-                }`}
-                onClick={() => {
-                  onChange(option.value);
+              if (!nextValue.trim()) {
+                onChange('');
+              }
+            }}
+            onFocus={() => {
+              setQuery('');
+              setIsOpen(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+
+                if (filteredOptions[0]) {
+                  onChange(filteredOptions[0].value);
                   setIsOpen(false);
-                }}
-                role="option"
-                aria-selected={option.value === value}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+                  setQuery('');
+                }
+              }
+
+              if (event.key === 'Escape') {
+                setIsOpen(false);
+                setQuery('');
+              }
+            }}
+            placeholder={placeholder}
+            className={styles.exportDropdownInput}
+          />
+          <button
+            type="button"
+            className={styles.exportDropdownToggle}
+            onClick={() => {
+              setIsOpen((open) => !open);
+              setQuery('');
+            }}
+            aria-label={`Toggle ${label} options`}
+          >
+          <FiChevronDown className={styles.exportDropdownIcon} />
+          </button>
         </div>
-      ) : null}
+
+        {isOpen ? (
+          <div id={listId} className={styles.exportDropdownMenu} role="listbox">
+            <div className={styles.exportDropdownScroll}>
+              {filteredOptions.length ? (
+                filteredOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`${styles.exportDropdownOption} ${
+                      option.value === value
+                        ? styles.exportDropdownOptionSelected
+                        : ''
+                    }`}
+                    onClick={() => {
+                      onChange(option.value);
+                      setIsOpen(false);
+                      setQuery('');
+                    }}
+                    role="option"
+                    aria-selected={option.value === value}
+                  >
+                    {option.label}
+                  </button>
+                ))
+              ) : (
+                <p className={styles.exportDropdownEmpty}>No matching options.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
     </div>
   );
 }
 
-export default function LogbookClient({ entries, loadError, toast }) {
-  const router = useRouter();
-  const [searchTerm, setSearchTerm] = useState('');
+export default function LogbookClient({
+  entries,
+  loadError,
+  toast,
+  currentUserRole,
+  transmitterOptions,
+  addresseeOptions,
+  sectionOptions,
+  modeOptions,
+  }) {
+    const router = useRouter();
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterMonth, setFilterMonth] = useState(() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
   const [contextMenu, setContextMenu] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [isExportFilterOpen, setIsExportFilterOpen] = useState(false);
+  const [activeDialog, setActiveDialog] = useState(null);
+  const [editEntryId, setEditEntryId] = useState(null);
+  const [editInitialFormData, setEditInitialFormData] = useState(null);
+  const [isEditLoading, setIsEditLoading] = useState(false);
+  const [editLoadError, setEditLoadError] = useState('');
   const [exportMode, setExportMode] = useState('all');
   const [exportYear, setExportYear] = useState('');
   const [exportMonth, setExportMonth] = useState('');
+  const isBackdatingAllowed = canBackdate(currentUserRole);
 
-  const filteredEntries = entries.filter((entry) => matchesSearch(entry, searchTerm));
+  const entriesInView = searchTerm.trim()
+    ? entries
+    : filterMonth
+      ? entries.filter((entry) => {
+          const dateParts = getEntryDateParts(entry.timestamp);
+          if (!dateParts) return false;
+          const entryMonthStr = `${dateParts.year}-${String(dateParts.month).padStart(2, '0')}`;
+          return entryMonthStr === filterMonth;
+        })
+      : entries;
+
+  const filteredEntries = entriesInView.filter((entry) =>
+    matchesSearch(entry, searchTerm)
+  );
   const exportYears = Array.from(
     new Set(
       entries
@@ -216,6 +332,44 @@ export default function LogbookClient({ entries, loadError, toast }) {
     return true;
   });
 
+  const showToast = useCallback((type, message, duration = 4200) => {
+    const toastId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+
+    setToasts((currentToasts) => [
+      ...currentToasts,
+      { id: toastId, message, type, duration },
+    ]);
+  }, []);
+
+  const showToastOnce = useCallback(
+    (type, message, duration = 4200) => {
+      const storageKey = `logbook-toast:${type}:${message}`;
+
+      try {
+        if (typeof window !== 'undefined') {
+          const lastToast = window.sessionStorage.getItem(storageKey);
+
+          if (lastToast === 'shown') {
+            return;
+          }
+
+          window.sessionStorage.setItem(storageKey, 'shown');
+          window.setTimeout(() => {
+            window.sessionStorage.removeItem(storageKey);
+          }, 1500);
+        }
+      } catch {
+        // Ignore storage access issues and fall back to showing the toast.
+      }
+
+      showToast(type, message, duration);
+    },
+    [showToast]
+  );
+
   useEffect(() => {
     if (!contextMenu) {
       return;
@@ -249,22 +403,37 @@ export default function LogbookClient({ entries, loadError, toast }) {
       return;
     }
 
-    showToastOnce('error', loadError);
-  }, [loadError]);
+    const timeoutId = window.setTimeout(() => {
+      showToastOnce('error', loadError);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadError, showToastOnce]);
 
   useEffect(() => {
     if (!toast) {
       return;
     }
 
-    if (toast === 'edit-restricted') {
-      showToastOnce('error', 'You can only edit records that you encoded.');
-    } else if (toast === 'record-updated') {
-      showToastOnce('success', 'The logbook record was updated successfully.');
-    }
+    const timeoutId = window.setTimeout(() => {
+      if (toast === 'edit-restricted') {
+        showToastOnce('error', 'You can only edit records that you encoded.');
+      } else if (toast === 'record-updated') {
+        showToastOnce(
+          'success',
+          'The logbook record was updated successfully.'
+        );
+      }
+    }, 0);
 
     router.replace('/logbook');
-  }, [router, toast]);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [router, showToastOnce, toast]);
 
   const dismissToast = useCallback((toastId) => {
     setToasts((currentToasts) =>
@@ -272,40 +441,13 @@ export default function LogbookClient({ entries, loadError, toast }) {
     );
   }, []);
 
-  const showToast = (type, message, duration = 4200) => {
-    const toastId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random()}`;
-
-    setToasts((currentToasts) => [
-      ...currentToasts,
-      { id: toastId, message, type, duration },
-    ]);
-  };
-
-  const showToastOnce = (type, message, duration = 4200) => {
-    const storageKey = `logbook-toast:${type}:${message}`;
-
-    try {
-      if (typeof window !== 'undefined') {
-        const lastToast = window.sessionStorage.getItem(storageKey);
-
-        if (lastToast === 'shown') {
-          return;
-        }
-
-        window.sessionStorage.setItem(storageKey, 'shown');
-        window.setTimeout(() => {
-          window.sessionStorage.removeItem(storageKey);
-        }, 1500);
-      }
-    } catch {
-      // Ignore storage access issues and fall back to showing the toast.
-    }
-
-    showToast(type, message, duration);
-  };
+  const closeRecordDialog = useCallback(() => {
+    setActiveDialog(null);
+    setEditEntryId(null);
+    setEditInitialFormData(null);
+    setEditLoadError('');
+    setIsEditLoading(false);
+  }, []);
 
   const handleExport = () => {
     const rows = exportableEntries.map((entry) => [
@@ -355,7 +497,6 @@ export default function LogbookClient({ entries, loadError, toast }) {
   };
 
   const handleExportModeChange = (nextMode) => {
-
     setExportMode(nextMode);
 
     if (nextMode === 'all') {
@@ -366,20 +507,11 @@ export default function LogbookClient({ entries, loadError, toast }) {
 
     if (nextMode === 'year') {
       setExportMonth('');
-      if (!exportYear && exportYears.length) {
-        setExportYear(String(exportYears[0]));
-      }
       return;
     }
 
     if (nextMode === 'month') {
-      if (!exportYear && exportYears.length) {
-        setExportYear(String(exportYears[0]));
-      }
-
-      if (!exportMonth) {
-        setExportMonth('01');
-      }
+      setExportMonth('');
     }
   };
 
@@ -413,25 +545,209 @@ export default function LogbookClient({ entries, loadError, toast }) {
     });
   };
 
-  const handleEditClick = () => {
-    if (!contextMenu?.entryId) {
+  const openNewDialog = () => {
+    setActiveDialog('new');
+    setContextMenu(null);
+    setEditEntryId(null);
+    setEditInitialFormData(null);
+    setEditLoadError('');
+    setIsEditLoading(false);
+  };
+
+  const handleEditClick = async () => {
+    if (!contextMenu?.entryId || isEditLoading) {
       return;
     }
 
-    router.push(`/logbook/${contextMenu.entryId}/edit`);
+    const nextEntryId = contextMenu.entryId;
+
     setContextMenu(null);
+    setActiveDialog('edit');
+    setEditEntryId(nextEntryId);
+    setEditInitialFormData(null);
+    setEditLoadError('');
+    setIsEditLoading(true);
+
+    try {
+      const response = await fetch(`/api/logbook/${nextEntryId}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Unable to load the logbook record right now.'
+        );
+      }
+
+      const entry = data.entry;
+
+      setEditInitialFormData({
+        particulars: entry?.particulars ?? '',
+        addressee: splitStoredListValue(entry?.addressee),
+        transmitter: entry?.transmitter ?? '',
+        section: entry?.section ?? '',
+        modeOfTransmittal: splitStoredListValue(entry?.modeOfTransmittal),
+        remarks: entry?.remarks ?? '',
+      });
+    } catch (error) {
+      const errorMessage =
+        error.message || 'Unable to load the logbook record right now.';
+
+      setEditLoadError(errorMessage);
+      showToast('error', errorMessage);
+    } finally {
+      setIsEditLoading(false);
+    }
   };
+
+  const handleInsertClick = () => {
+    if (!isBackdatingAllowed) {
+      return;
+    }
+
+    setActiveDialog('insert');
+    setContextMenu(null);
+    setEditEntryId(null);
+    setEditInitialFormData(null);
+    setEditLoadError('');
+    setIsEditLoading(false);
+  };
+
+  const handleCreateSuccess = (data) => {
+    closeRecordDialog();
+    showToast(
+      'success',
+      data?.message || 'The logbook record was saved successfully.'
+    );
+  };
+
+  const handleUpdateSuccess = (data) => {
+    closeRecordDialog();
+    showToast(
+      'success',
+      data?.message || 'The logbook record was updated successfully.'
+    );
+  };
+
+  const isRecordDialogOpen =
+    activeDialog === 'new' ||
+    activeDialog === 'insert' ||
+    activeDialog === 'edit';
+  const isInsertDialog = activeDialog === 'insert';
+  const isEditDialog = activeDialog === 'edit';
+  const dialogTitle = isInsertDialog
+    ? 'Insert Backdated Record'
+    : isEditDialog
+      ? 'Edit Record'
+      : 'New Record';
+  const dialogText = isInsertDialog
+    ? 'Add a missing earlier logbook entry with a custom reference number and timestamp.'
+    : isEditDialog
+      ? 'Update the selected routing details without leaving the logbook table.'
+      : 'Capture the routing details and save a new logbook entry without leaving the table.';
 
   return (
     <>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
-      <div className={styles.toolbarCard}>
-        <div className={styles.toolbarInfo}>
+      {isRecordDialogOpen ? (
+        <div
+          className={styles.insertDialogBackdrop}
+          role="presentation"
+        >
+          <div
+            className={styles.insertDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="record-dialog-title"
+          >
+            <div className={styles.insertDialogHeader}>
+              <div>
+                <p className={styles.insertDialogEyebrow}>Digital Logbook</p>
+                <h2 id="record-dialog-title" className={styles.insertDialogTitle}>
+                  {dialogTitle}
+                </h2>
+                <p className={styles.insertDialogText}>{dialogText}</p>
+              </div>
+              <button
+                type="button"
+                className={styles.exportDialogClose}
+                onClick={closeRecordDialog}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className={styles.insertDialogBody}>
+              {isEditDialog && isEditLoading ? (
+                <div className={styles.recordDialogState}>
+                  <FiLoader className={styles.recordDialogSpinner} />
+                  <p className={styles.recordDialogStateTitle}>Loading record</p>
+                  <p className={styles.recordDialogStateText}>
+                    Fetching the selected logbook entry for editing.
+                  </p>
+                </div>
+              ) : isEditDialog && editLoadError ? (
+                <div className={styles.recordDialogState}>
+                  <p className={styles.recordDialogStateTitle}>
+                    Unable to open record
+                  </p>
+                  <p className={styles.recordDialogStateText}>{editLoadError}</p>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={closeRecordDialog}
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : isEditDialog && !editInitialFormData ? null : (
+                <NewRecordForm
+                  transmitterOptions={transmitterOptions}
+                  addresseeOptions={addresseeOptions}
+                  sectionOptions={sectionOptions}
+                  modeOptions={modeOptions}
+                  initialFormData={isEditDialog ? editInitialFormData : undefined}
+                  submitUrl={
+                    isInsertDialog
+                      ? '/api/logbook/backdated'
+                      : isEditDialog
+                        ? `/api/logbook/${editEntryId}`
+                        : '/api/logbook'
+                  }
+                  submitMethod={isEditDialog ? 'PUT' : 'POST'}
+                  submitLabel={
+                    isInsertDialog
+                      ? 'Insert Record'
+                      : isEditDialog
+                        ? 'Update Record'
+                        : 'Save Record'
+                  }
+                  showBackdatingFields={isInsertDialog}
+                  showBackLink={false}
+                  onCancel={closeRecordDialog}
+                  cancelLabel="Close"
+                  onSuccess={
+                    isEditDialog ? handleUpdateSuccess : handleCreateSuccess
+                  }
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={styles.tableCard} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 34%), linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 50%), var(--color-surface)' }}>
+        <div style={{ margin: '0 24px', padding: '24px 0 20px', borderBottom: '1px solid var(--color-border)' }}>
           <div className={styles.headingBlock}>
             <h1 className={styles.title}>Digital Logbook</h1>
           </div>
 
+          <div className={styles.toolbarFilters} style={{ marginTop: '16px' }}>
           <div className={styles.searchWrap}>
             <label className={styles.searchField}>
               <FiSearch className={styles.searchIcon} />
@@ -443,26 +759,37 @@ export default function LogbookClient({ entries, loadError, toast }) {
                 className={styles.searchInput}
               />
             </label>
+            <input
+              type="month"
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className={styles.monthField}
+              aria-label="Filter by month"
+            />
+          </div>
+
+          <div className={styles.actionGroup}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={openExportFilter}
+              disabled={loadError || !filteredEntries.length}
+            >
+              <FiDownload />
+              <span>Export</span>
+            </button>
+
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={openNewDialog}
+            >
+              <FiPlus />
+              <span>New Record</span>
+            </button>
           </div>
         </div>
-
-        <div className={styles.actionGroup}>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            onClick={openExportFilter}
-            disabled={loadError || !filteredEntries.length}
-          >
-            <FiDownload />
-            <span>Export</span>
-          </button>
-
-          <Link href="/logbook/new" className={styles.primaryButton}>
-            <FiPlus />
-            <span>New Record</span>
-          </Link>
         </div>
-      </div>
 
       {isExportFilterOpen ? (
         <div
@@ -484,8 +811,12 @@ export default function LogbookClient({ entries, loadError, toast }) {
                   Choose a filter before exporting
                 </h2>
               </div>
-              <button type="button" className={styles.exportDialogClose} onClick={closeExportFilter}>
-                ×
+              <button
+                type="button"
+                className={styles.exportDialogClose}
+                onClick={closeExportFilter}
+              >
+                &times;
               </button>
             </div>
 
@@ -524,9 +855,12 @@ export default function LogbookClient({ entries, loadError, toast }) {
                   options={Array.from({ length: 12 }, (_, index) => index + 1).map(
                     (month) => ({
                       value: formatMonthValue(month),
-                      label: new Date(2000, month - 1, 1).toLocaleString('en-US', {
-                        month: 'long',
-                      }),
+                      label: new Date(2000, month - 1, 1).toLocaleString(
+                        'en-US',
+                        {
+                          month: 'long',
+                        }
+                      ),
                     })
                   )}
                 />
@@ -534,13 +868,21 @@ export default function LogbookClient({ entries, loadError, toast }) {
             </div>
 
             <div className={styles.exportDialogActions}>
-              <button type="button" className={styles.secondaryButton} onClick={() => {
-                resetExportFilter();
-                closeExportFilter();
-              }}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => {
+                  resetExportFilter();
+                  closeExportFilter();
+                }}
+              >
                 Cancel
               </button>
-              <button type="button" className={styles.primaryButton} onClick={handleConfirmExport}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={handleConfirmExport}
+              >
                 <FiDownload />
                 <span>Export</span>
               </button>
@@ -549,7 +891,7 @@ export default function LogbookClient({ entries, loadError, toast }) {
         </div>
       ) : null}
 
-      <div className={styles.tableCard}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {loadError ? (
           <p className={styles.emptyText}>
             Unable to load logbook records right now.
@@ -578,7 +920,10 @@ export default function LogbookClient({ entries, loadError, toast }) {
               </thead>
               <tbody>
                 {filteredEntries.map((entry) => (
-                  <tr key={entry.id} onContextMenu={(event) => handleRowContextMenu(event, entry)}>
+                  <tr
+                    key={entry.id}
+                    onContextMenu={(event) => handleRowContextMenu(event, entry)}
+                  >
                     <td>{entry.timestamp || '-'}</td>
                     <td>{entry.referenceNumber || '-'}</td>
                     <td>{entry.particulars || '-'}</td>
@@ -605,11 +950,25 @@ export default function LogbookClient({ entries, loadError, toast }) {
             onClick={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <button type="button" className={styles.rowContextAction} onClick={handleEditClick}>
+            {isBackdatingAllowed ? (
+              <button
+                type="button"
+                className={styles.rowContextAction}
+                onClick={handleInsertClick}
+              >
+                Insert
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={styles.rowContextAction}
+              onClick={handleEditClick}
+            >
               Edit
             </button>
           </div>
         ) : null}
+      </div>
       </div>
     </>
   );

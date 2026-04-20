@@ -7,23 +7,46 @@ import { useEffect, useState } from 'react';
 import {
   FiBookOpen,
   FiCalendar,
+  FiClock,
   FiChevronLeft,
   FiChevronRight,
   FiClipboard,
   FiLogOut,
   FiMoon,
   FiSun,
-  FiUser,
 } from 'react-icons/fi';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase-client';
 import styles from './protected-shell.module.css';
 
 const navLinks = [
-  { name: 'Events', href: '/event', icon: FiCalendar },
+  { name: 'Schedules', href: '/event', icon: FiCalendar },
   { name: 'Digital Logbook', href: '/logbook', icon: FiBookOpen },
   { name: 'Attendance Monitoring', href: '/attendance', icon: FiClipboard },
+  { name: 'Personal Events', href: '/personal-events', icon: FiClock },
 ];
+
+function getUserInitials(name, email) {
+  const normalizedName = String(name ?? '').trim();
+
+  if (normalizedName) {
+    const parts = normalizedName.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase();
+  }
+
+  const normalizedEmail = String(email ?? '').trim();
+
+  if (normalizedEmail) {
+    return normalizedEmail.slice(0, 2).toUpperCase();
+  }
+
+  return 'U';
+}
 
 export default function ProtectedShell({ children, user }) {
   const pathname = usePathname();
@@ -31,12 +54,46 @@ export default function ProtectedShell({ children, user }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const userInitials = getUserInitials(user?.name, user?.email);
 
   useEffect(() => {
     const currentTheme =
       document.documentElement.getAttribute('data-theme') || 'light';
     setIsDarkMode(currentTheme === 'dark');
   }, []);
+
+  useEffect(() => {
+    let lastVersion = null;
+    let isActive = true;
+
+    const checkVersion = async () => {
+      try {
+        const res = await fetch('/api/status/version');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (!isActive) return;
+
+        if (lastVersion === null) {
+          lastVersion = data.version;
+        } else if (lastVersion !== data.version && data.version !== 'error') {
+          lastVersion = data.version;
+          router.refresh();
+        }
+      } catch (err) {
+        // Ignore network errors so we don't spam the console
+      }
+    };
+
+    // Check version every 10 seconds
+    const interval = setInterval(checkVersion, 10000);
+    checkVersion();
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [router]);
 
   const toggleTheme = () => {
     const nextDarkMode = !isDarkMode;
@@ -109,9 +166,13 @@ export default function ProtectedShell({ children, user }) {
           </div>
         </div>
 
-        <div className={styles.profileCard}>
+        <div
+          className={`${styles.profileCard} ${
+            isCollapsed ? styles.profileCardCollapsed : ''
+          }`}
+        >
           <div className={styles.profileAvatar}>
-            <FiUser />
+            <span className={styles.profileInitials}>{userInitials}</span>
           </div>
           {!isCollapsed ? (
             <div className={styles.profileText}>

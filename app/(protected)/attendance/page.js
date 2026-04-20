@@ -1,50 +1,93 @@
-export default function AttendancePage() {
+import { verifySession } from '@/lib/auth-session';
+import { getUserPermissionByEmail } from '@/lib/user-permissions';
+import { getAttendanceRecords, getPunchErrors } from '@/lib/attendance';
+import AttendanceDashboard from './attendance-dashboard';
+
+export const dynamic = 'force-dynamic';
+
+const FULL_ATTENDANCE_ROLES = new Set(['admin', 'super_admin']);
+
+function normalizeText(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function canViewAllAttendance(role) {
+  return FULL_ATTENDANCE_ROLES.has(normalizeText(role));
+}
+
+function buildAttendanceShortName(firstName, lastName) {
+  const normalizedFirstName = String(firstName ?? '').trim();
+  const normalizedLastName = String(lastName ?? '').trim();
+
+  if (!normalizedFirstName || !normalizedLastName) {
+    return '';
+  }
+
+  return `${normalizedFirstName.charAt(0)}.${normalizedLastName}`;
+}
+
+function buildShortNameFromFullName(fullName) {
+  const normalizedName = String(fullName ?? '').trim();
+
+  if (!normalizedName) {
+    return '';
+  }
+
+  const nameParts = normalizedName.split(/\s+/).filter(Boolean);
+
+  if (nameParts.length < 2) {
+    return normalizedName;
+  }
+
+  return `${nameParts[0].charAt(0)}.${nameParts[nameParts.length - 1]}`;
+}
+
+function isOwnRecord(record, allowedUser, session) {
+  const recordFullName = normalizeText(record.fullName);
+  const permissionShortName = normalizeText(
+    buildAttendanceShortName(allowedUser?.firstName, allowedUser?.lastName)
+  );
+  const sessionShortName = normalizeText(buildShortNameFromFullName(session?.name));
+
   return (
-    <section
-      style={{
-        width: '100%',
-        maxWidth: '920px',
-        padding: '32px',
-        border: '1px solid var(--color-border)',
-        borderRadius: '28px',
-        background: 'var(--color-surface)',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.12)',
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          color: '#0f766e',
-          fontSize: '14px',
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-        }}
-      >
-        Module
-      </p>
-      <h1
-        style={{
-          margin: '12px 0 10px',
-          color: 'var(--color-text)',
-          fontSize: '36px',
-          lineHeight: 1.1,
-        }}
-      >
-        Attendance Monitoring
-      </h1>
-      <p
-        style={{
-          margin: 0,
-          maxWidth: '60ch',
-          color: 'var(--color-text-muted)',
-          fontSize: '16px',
-          lineHeight: 1.7,
-        }}
-      >
-        This area is prepared for attendance tracking, daily monitoring, and
-        status updates for your workforce.
-      </p>
-    </section>
+    (permissionShortName && recordFullName === permissionShortName) ||
+    (sessionShortName && recordFullName === sessionShortName)
+  );
+}
+
+export default async function AttendancePage() {
+  const [attendanceRecords, punchErrors, session] = await Promise.all([
+    getAttendanceRecords(),
+    getPunchErrors(),
+    verifySession(),
+  ]);
+  let scopedAttendanceRecords = attendanceRecords;
+  let scopedPunchErrors = punchErrors;
+  let currentUserRole = null;
+
+  if (session?.email) {
+    try {
+      const allowedUser = await getUserPermissionByEmail(session.email);
+      currentUserRole = allowedUser?.role ?? null;
+
+      if (allowedUser && !canViewAllAttendance(allowedUser.role)) {
+        scopedAttendanceRecords = attendanceRecords.filter((record) =>
+          isOwnRecord(record, allowedUser, session)
+        );
+        scopedPunchErrors = punchErrors.filter((record) =>
+          isOwnRecord(record, allowedUser, session)
+        );
+      }
+    } catch (error) {
+      console.error('Failed to resolve attendance permissions.', error);
+    }
+  }
+
+  return (
+    <AttendanceDashboard
+      initialAttendance={scopedAttendanceRecords}
+      initialPunchErrors={scopedPunchErrors}
+      currentUserRole={currentUserRole}
+    />
   );
 }

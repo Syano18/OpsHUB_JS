@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useId, useRef, useState } from 'react';
 import {
   FiArrowLeft,
+  FiCheck,
   FiChevronDown,
   FiSave,
   FiSearch,
@@ -28,6 +29,84 @@ function useCloseOnOutsideClick(containerRef, onClose) {
   }, [containerRef, onClose]);
 }
 
+const MULTI_SELECT_MEMORY_LIMIT = 12;
+const DEFAULT_FORM_DATA = {
+  referenceNumber: '',
+  timestamp: '',
+  particulars: '',
+  addressee: [],
+  transmitter: '',
+  section: '',
+  modeOfTransmittal: [],
+  remarks: '',
+};
+
+function buildComboStorageKey(memoryKey) {
+  return `logbook-multiselect-memory:${memoryKey}`;
+}
+
+function loadStoredCombos(memoryKey) {
+  if (typeof window === 'undefined' || !memoryKey) {
+    return [];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(buildComboStorageKey(memoryKey));
+
+    if (!rawValue) {
+      return [];
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+
+    if (!Array.isArray(parsedValue)) {
+      return [];
+    }
+
+    return parsedValue
+      .filter(Array.isArray)
+      .map((combo) =>
+        combo.map((value) => String(value ?? '').trim()).filter(Boolean)
+      )
+      .filter((combo) => combo.length > 1);
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredCombo(memoryKey, values) {
+  if (typeof window === 'undefined' || !memoryKey || !Array.isArray(values)) {
+    return;
+  }
+
+  const normalizedValues = values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean);
+
+  if (normalizedValues.length < 2) {
+    return;
+  }
+
+  const normalizedKey = normalizedValues.map((value) => value.toLowerCase()).join('||');
+  const existingCombos = loadStoredCombos(memoryKey);
+  const nextCombos = [
+    normalizedValues,
+    ...existingCombos.filter(
+      (combo) =>
+        combo.map((value) => value.toLowerCase()).join('||') !== normalizedKey
+    ),
+  ].slice(0, MULTI_SELECT_MEMORY_LIMIT);
+
+  try {
+    window.localStorage.setItem(
+      buildComboStorageKey(memoryKey),
+      JSON.stringify(nextCombos)
+    );
+  } catch {
+    // Ignore storage issues and continue without saved combinations.
+  }
+}
+
 function SearchableSelect({
   label,
   value,
@@ -36,6 +115,10 @@ function SearchableSelect({
   placeholder,
   required = false,
   error = '',
+  createLabel = '',
+  onCreateOption = null,
+  isCreatingOption = false,
+  createOptionHint = '',
 }) {
   const listId = useId();
   const containerRef = useRef(null);
@@ -53,6 +136,11 @@ function SearchableSelect({
     .filter((option) =>
       option.toLowerCase().includes(deferredQuery.trim().toLowerCase())
     );
+  const trimmedQuery = query.trim();
+  const canCreateOption =
+    Boolean(onCreateOption) &&
+    Boolean(trimmedQuery) &&
+    !options.some((option) => option.toLowerCase() === trimmedQuery.toLowerCase());
 
   const selectOption = (option) => {
     onChange(option);
@@ -90,11 +178,11 @@ function SearchableSelect({
               } else if (value) {
                 onChange('');
               }
-            }}
-            onFocus={() => {
-              setQuery(value);
-              setIsOpen(true);
-            }}
+              }}
+              onFocus={() => {
+                setQuery('');
+                setIsOpen(true);
+              }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
@@ -127,21 +215,59 @@ function SearchableSelect({
         {isOpen ? (
           <div id={listId} className={styles.optionsPanel}>
             {filteredOptions.length ? (
-              filteredOptions.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={`${styles.optionButton} ${
-                    option === value ? styles.optionButtonSelected : ''
-                  }`}
-                  onClick={() => selectOption(option)}
-                >
-                  <span>{option}</span>
-                  {option === value ? <FiCheck /> : null}
-                </button>
-              ))
+              <>
+                {filteredOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`${styles.optionButton} ${
+                      option === value ? styles.optionButtonSelected : ''
+                    }`}
+                    onClick={() => selectOption(option)}
+                  >
+                    <span>{option}</span>
+                    {option === value ? <FiCheck /> : null}
+                  </button>
+                ))}
+                {canCreateOption ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={() => onCreateOption(trimmedQuery)}
+                    disabled={isCreatingOption}
+                  >
+                    <span>
+                      {isCreatingOption
+                        ? `Adding ${createLabel || label}...`
+                        : `Add ${createLabel || label}: ${trimmedQuery}`}
+                    </span>
+                    <FiPlusBadge />
+                  </button>
+                ) : null}
+              </>
             ) : (
-              <p className={styles.optionEmpty}>No matching options.</p>
+              <>
+                {canCreateOption ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={() => onCreateOption(trimmedQuery)}
+                    disabled={isCreatingOption}
+                  >
+                    <span>
+                      {isCreatingOption
+                        ? `Adding ${createLabel || label}...`
+                        : `Add ${createLabel || label}: ${trimmedQuery}`}
+                    </span>
+                    <FiPlusBadge />
+                  </button>
+                ) : (
+                  <p className={styles.optionEmpty}>No matching options.</p>
+                )}
+                {createOptionHint ? (
+                  <p className={styles.optionHint}>{createOptionHint}</p>
+                ) : null}
+              </>
             )}
           </div>
         ) : null}
@@ -160,6 +286,15 @@ function MultiSelectDropdown({
   placeholder,
   required = false,
   error = '',
+  createLabel = '',
+  onCreateOption = null,
+  isCreatingOption = false,
+  createOptionHint = '',
+  selectionLabel = 'option',
+  emptyHint = '',
+  comboSuggestions = [],
+  onApplyComboSuggestion = null,
+  comboSuggestionLabel = 'Saved combinations',
 }) {
   const listId = useId();
   const containerRef = useRef(null);
@@ -177,6 +312,25 @@ function MultiSelectDropdown({
     .filter((option) =>
       option.toLowerCase().includes(deferredQuery.trim().toLowerCase())
     );
+  const trimmedQuery = query.trim();
+  const canCreateOption =
+    Boolean(onCreateOption) &&
+    Boolean(trimmedQuery) &&
+    !options.some((option) => option.toLowerCase() === trimmedQuery.toLowerCase());
+  const filteredComboSuggestions = trimmedQuery
+    ? comboSuggestions.filter((combo) => {
+        const comboKey = combo.map((value) => value.toLowerCase()).join('||');
+        const currentKey = values.map((value) => value.toLowerCase()).join('||');
+
+        if (!combo.length || comboKey === currentKey) {
+          return false;
+        }
+
+        return combo.some((option) =>
+          option.toLowerCase().includes(trimmedQuery.toLowerCase())
+        );
+      })
+    : [];
 
   const addValue = (option) => {
     if (!values.includes(option)) {
@@ -268,24 +422,79 @@ function MultiSelectDropdown({
 
         {isOpen ? (
           <div id={listId} className={styles.optionsPanel}>
+            {filteredComboSuggestions.length ? (
+              <div className={styles.comboSuggestionGroup}>
+                <p className={styles.comboSuggestionLabel}>{comboSuggestionLabel}</p>
+                {filteredComboSuggestions.map((combo) => (
+                  <button
+                    key={combo.join('||')}
+                    type="button"
+                    className={styles.comboSuggestionButton}
+                    onClick={() => onApplyComboSuggestion?.(combo)}
+                  >
+                    <span>{combo.join(', ')}</span>
+                    <span className={styles.comboSuggestionBadge}>Use</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             {filteredOptions.length ? (
-              filteredOptions.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={styles.optionButton}
-                  onClick={() => addValue(option)}
-                >
-                  <span>{option}</span>
-                  <FiPlusBadge />
-                </button>
-              ))
+              <>
+                {filteredOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={styles.optionButton}
+                    onClick={() => addValue(option)}
+                  >
+                    <span>{option}</span>
+                    <FiPlusBadge />
+                  </button>
+                ))}
+                {canCreateOption ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={() => onCreateOption(trimmedQuery)}
+                    disabled={isCreatingOption}
+                  >
+                    <span>
+                      {isCreatingOption
+                        ? `Adding ${createLabel || label}...`
+                        : `Add ${createLabel || label}: ${trimmedQuery}`}
+                    </span>
+                    <FiPlusBadge />
+                  </button>
+                ) : null}
+              </>
             ) : (
-              <p className={styles.optionEmpty}>
-                {values.length === options.length
-                  ? 'All modes selected.'
-                  : 'No matching modes.'}
-              </p>
+              <>
+                {canCreateOption ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={() => onCreateOption(trimmedQuery)}
+                    disabled={isCreatingOption}
+                  >
+                    <span>
+                      {isCreatingOption
+                        ? `Adding ${createLabel || label}...`
+                        : `Add ${createLabel || label}: ${trimmedQuery}`}
+                    </span>
+                    <FiPlusBadge />
+                  </button>
+                ) : (
+                  <p className={styles.optionEmpty}>
+                    {values.length === options.length
+                      ? 'All modes selected.'
+                      : 'No matching modes.'}
+                  </p>
+                )}
+                {createOptionHint ? (
+                  <p className={styles.optionHint}>{createOptionHint}</p>
+                ) : null}
+              </>
             )}
           </div>
         ) : null}
@@ -293,8 +502,8 @@ function MultiSelectDropdown({
 
       <p className={styles.fieldHint}>
         {values.length
-          ? `${values.length} mode${values.length === 1 ? '' : 's'} selected`
-          : 'Choose one or more modes of transmittal.'}
+          ? `${values.length} ${selectionLabel}${values.length === 1 ? '' : 's'} selected`
+          : emptyHint || `Choose one or more ${label.toLowerCase()} values.`}
       </p>
       {error ? <p className={styles.fieldError}>{error}</p> : null}
     </div>
@@ -312,8 +521,8 @@ function buildErrors(formData) {
     nextErrors.particulars = 'Particulars is required.';
   }
 
-  if (!formData.addressee.trim()) {
-    nextErrors.addressee = 'Addressee is required.';
+  if (!formData.addressee.length) {
+    nextErrors.addressee = 'Select at least one addressee.';
   }
 
   if (!formData.transmitter.trim()) {
@@ -328,45 +537,83 @@ function buildErrors(formData) {
     nextErrors.modeOfTransmittal = 'Select at least one mode of transmittal.';
   }
 
+  if (formData.referenceNumberEnabled && !formData.referenceNumber.trim()) {
+    nextErrors.referenceNumber = 'Reference Number is required.';
+  }
+
+  if (formData.timestampEnabled) {
+    const trimmedTimestamp = formData.timestamp.trim();
+
+    if (!trimmedTimestamp) {
+      nextErrors.timestamp = 'Timestamp is required.';
+    } else if (Number.isNaN(new Date(trimmedTimestamp).getTime())) {
+      nextErrors.timestamp = 'Please enter a valid timestamp.';
+    }
+  }
+
   return nextErrors;
 }
 
+function resolveInitialFormData(initialFormData) {
+  return {
+    referenceNumber: String(
+      initialFormData?.referenceNumber ?? DEFAULT_FORM_DATA.referenceNumber
+    ),
+    timestamp: String(initialFormData?.timestamp ?? DEFAULT_FORM_DATA.timestamp),
+    particulars: String(
+      initialFormData?.particulars ?? DEFAULT_FORM_DATA.particulars
+    ),
+    addressee: Array.isArray(initialFormData?.addressee)
+      ? initialFormData.addressee
+          .map((value) => String(value ?? '').trim())
+          .filter(Boolean)
+      : DEFAULT_FORM_DATA.addressee,
+    transmitter: String(
+      initialFormData?.transmitter ?? DEFAULT_FORM_DATA.transmitter
+    ),
+    section: String(initialFormData?.section ?? DEFAULT_FORM_DATA.section),
+    modeOfTransmittal: Array.isArray(initialFormData?.modeOfTransmittal)
+      ? initialFormData.modeOfTransmittal
+          .map((value) => String(value ?? '').trim())
+          .filter(Boolean)
+      : DEFAULT_FORM_DATA.modeOfTransmittal,
+    remarks: String(initialFormData?.remarks ?? DEFAULT_FORM_DATA.remarks),
+  };
+}
+
 export default function NewRecordForm({
-  transmitterOptions,
-  sectionOptions,
-  modeOptions,
+  transmitterOptions = [],
+  addresseeOptions = [],
+  sectionOptions = [],
+  modeOptions = [],
   initialFormData,
   submitUrl = '/api/logbook',
   submitMethod = 'POST',
   submitLabel = 'Save Record',
   successMessage = 'The logbook record was saved successfully.',
   successRedirectUrl = null,
+  onSuccess = null,
+  onCancel = null,
+  cancelLabel = 'Cancel',
+  showBackLink = true,
+  backHref = '/logbook',
+  showBackdatingFields = false,
 }) {
-  const defaultFormData = {
-    particulars: '',
-    addressee: '',
-    transmitter: '',
-    section: '',
-    modeOfTransmittal: [],
-    remarks: '',
-  };
-  const resolvedInitialFormData = {
-    particulars: String(initialFormData?.particulars ?? defaultFormData.particulars),
-    addressee: String(initialFormData?.addressee ?? defaultFormData.addressee),
-    transmitter: String(initialFormData?.transmitter ?? defaultFormData.transmitter),
-    section: String(initialFormData?.section ?? defaultFormData.section),
-    modeOfTransmittal: Array.isArray(initialFormData?.modeOfTransmittal)
-      ? initialFormData.modeOfTransmittal
-          .map((value) => String(value ?? '').trim())
-          .filter(Boolean)
-      : defaultFormData.modeOfTransmittal,
-    remarks: String(initialFormData?.remarks ?? defaultFormData.remarks),
-  };
-  const [formData, setFormData] = useState({
-    ...resolvedInitialFormData,
-  });
+  const [formData, setFormData] = useState(() =>
+    resolveInitialFormData(initialFormData)
+  );
+  const [localAddresseeOptions, setLocalAddresseeOptions] =
+    useState(addresseeOptions);
+  const [localSectionOptions, setLocalSectionOptions] = useState(sectionOptions);
+  const [localModeOptions, setLocalModeOptions] = useState(modeOptions);
+  const [savedAddresseeCombos, setSavedAddresseeCombos] = useState([]);
+  const [savedModeCombos, setSavedModeCombos] = useState([]);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAddingAddressee, setIsAddingAddressee] = useState(false);
+  const [isAddingSection, setIsAddingSection] = useState(false);
+  const [isAddingMode, setIsAddingMode] = useState(false);
+  const [pendingCreateOption, setPendingCreateOption] = useState(null);
   const [toasts, setToasts] = useState([]);
   const toastTimeoutsRef = useRef(new Map());
   const router = useRouter();
@@ -415,16 +662,26 @@ export default function NewRecordForm({
   };
 
   useEffect(() => {
-    setFormData({
-      ...resolvedInitialFormData,
-    });
+    setFormData(resolveInitialFormData(initialFormData));
     setErrors({});
   }, [initialFormData]);
 
-  const handleCreateAnother = () => {
-    setFormData(resolvedInitialFormData);
-    setErrors({});
-  };
+  useEffect(() => {
+    setLocalAddresseeOptions(addresseeOptions);
+  }, [addresseeOptions]);
+
+  useEffect(() => {
+    setLocalSectionOptions(sectionOptions);
+  }, [sectionOptions]);
+
+  useEffect(() => {
+    setLocalModeOptions(modeOptions);
+  }, [modeOptions]);
+
+  useEffect(() => {
+    setSavedAddresseeCombos(loadStoredCombos('addressee'));
+    setSavedModeCombos(loadStoredCombos('mode_of_transmittal'));
+  }, []);
 
   const updateField = (name, value) => {
     setFormData((current) => ({
@@ -444,10 +701,98 @@ export default function NewRecordForm({
     });
   };
 
+  const appendModeValue = (value) => {
+    setFormData((current) => {
+      if (current.modeOfTransmittal.includes(value)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        modeOfTransmittal: [...current.modeOfTransmittal, value],
+      };
+    });
+
+    setErrors((current) => {
+      if (!current.modeOfTransmittal) {
+        return current;
+      }
+
+      return {
+        ...current,
+        modeOfTransmittal: '',
+      };
+    });
+  };
+
+  const appendAddresseeValue = (value) => {
+    setFormData((current) => {
+      if (current.addressee.includes(value)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        addressee: [...current.addressee, value],
+      };
+    });
+
+    setErrors((current) => {
+      if (!current.addressee) {
+        return current;
+      }
+
+      return {
+        ...current,
+        addressee: '',
+      };
+    });
+  };
+
+  const applyAddresseeComboSuggestion = (combo) => {
+    updateField('addressee', combo);
+  };
+
+  const applyModeComboSuggestion = (combo) => {
+    updateField('modeOfTransmittal', combo);
+  };
+
+  const requestCreateOption = (optionType, optionValue, onConfirm) => {
+    const normalizedOptionValue = String(optionValue ?? '').trim();
+
+    if (!normalizedOptionValue) {
+      return;
+    }
+
+    setPendingCreateOption({
+      type: optionType,
+      value: normalizedOptionValue,
+      onConfirm,
+    });
+  };
+
+  const closeCreateOptionModal = () => {
+    setPendingCreateOption(null);
+  };
+
+  const confirmCreateOption = async () => {
+    if (!pendingCreateOption) {
+      return;
+    }
+
+    const { onConfirm, value } = pendingCreateOption;
+    setPendingCreateOption(null);
+    await onConfirm(value);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    const nextErrors = buildErrors(formData);
+    const nextErrors = buildErrors({
+      ...formData,
+      referenceNumberEnabled: showBackdatingFields,
+      timestampEnabled: showBackdatingFields,
+    });
 
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
@@ -474,8 +819,21 @@ export default function NewRecordForm({
         );
       }
 
-      setFormData(resolvedInitialFormData);
+      if (submitMethod === 'POST') {
+        saveStoredCombo('addressee', formData.addressee);
+        saveStoredCombo('mode_of_transmittal', formData.modeOfTransmittal);
+        setSavedAddresseeCombos(loadStoredCombos('addressee'));
+        setSavedModeCombos(loadStoredCombos('mode_of_transmittal'));
+      }
+
+      setFormData(resolveInitialFormData(initialFormData));
       setErrors({});
+
+      if (typeof onSuccess === 'function') {
+        onSuccess(data);
+        router.refresh();
+        return;
+      }
 
       if (successRedirectUrl) {
         router.push(successRedirectUrl);
@@ -494,11 +852,247 @@ export default function NewRecordForm({
     }
   };
 
+  const handleCreateSection = async (sectionName) => {
+    const normalizedSectionName = String(sectionName ?? '').trim();
+
+    if (!normalizedSectionName || isAddingSection) {
+      return;
+    }
+
+    setIsAddingSection(true);
+
+    try {
+      const response = await fetch('/api/logbook/sections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ section: normalizedSectionName }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to add the section right now.');
+      }
+
+      if (Array.isArray(data.sections)) {
+        setLocalSectionOptions(data.sections);
+      } else {
+        setLocalSectionOptions((current) => {
+          const nextOptions = [...current, normalizedSectionName];
+          return [...new Set(nextOptions)].sort((left, right) =>
+            left.localeCompare(right)
+          );
+        });
+      }
+
+      updateField('section', data.section || normalizedSectionName);
+      showToast('success', data.message || 'Section added successfully.');
+    } catch (error) {
+      showToast(
+        'error',
+        error.message || 'Unable to add the section right now.'
+      );
+    } finally {
+      setIsAddingSection(false);
+    }
+  };
+
+  const handleCreateAddressee = async (addresseeName) => {
+    const normalizedAddresseeName = String(addresseeName ?? '').trim();
+
+    if (!normalizedAddresseeName || isAddingAddressee) {
+      return;
+    }
+
+    setIsAddingAddressee(true);
+
+    try {
+      const response = await fetch('/api/logbook/addressees', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ addressee: normalizedAddresseeName }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to add the addressee right now.');
+      }
+
+      if (Array.isArray(data.addressees)) {
+        setLocalAddresseeOptions(data.addressees);
+      } else {
+        setLocalAddresseeOptions((current) => {
+          const nextOptions = [...current, normalizedAddresseeName];
+          return [...new Set(nextOptions)].sort((left, right) =>
+            left.localeCompare(right)
+          );
+        });
+      }
+
+      appendAddresseeValue(data.addressee || normalizedAddresseeName);
+      showToast('success', data.message || 'Addressee added successfully.');
+    } catch (error) {
+      showToast(
+        'error',
+        error.message || 'Unable to add the addressee right now.'
+      );
+    } finally {
+      setIsAddingAddressee(false);
+    }
+  };
+
+  const handleCreateMode = async (modeName) => {
+    const normalizedModeName = String(modeName ?? '').trim();
+
+    if (!normalizedModeName || isAddingMode) {
+      return;
+    }
+
+    setIsAddingMode(true);
+
+    try {
+      const response = await fetch('/api/logbook/modes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ mode: normalizedModeName }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Unable to add the mode of transmittal right now.'
+        );
+      }
+
+      if (Array.isArray(data.modes)) {
+        setLocalModeOptions(data.modes);
+      } else {
+        setLocalModeOptions((current) => {
+          const nextOptions = [...current, normalizedModeName];
+          return [...new Set(nextOptions)].sort((left, right) =>
+            left.localeCompare(right)
+          );
+        });
+      }
+
+      appendModeValue(data.mode || normalizedModeName);
+      showToast(
+        'success',
+        data.message || 'Mode of transmittal added successfully.'
+      );
+    } catch (error) {
+      showToast(
+        'error',
+        error.message || 'Unable to add the mode of transmittal right now.'
+      );
+    } finally {
+      setIsAddingMode(false);
+    }
+  };
+
   return (
     <>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+      {pendingCreateOption ? (
+        <div
+          className={styles.confirmDialogBackdrop}
+          role="presentation"
+          onMouseDown={closeCreateOptionModal}
+        >
+          <div
+            className={styles.confirmDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-create-option-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p className={styles.confirmDialogEyebrow}>Confirm New Option</p>
+            <h2
+              id="confirm-create-option-title"
+              className={styles.confirmDialogTitle}
+            >
+              Add this {pendingCreateOption.type}?
+            </h2>
+            <p className={styles.confirmDialogText}>
+              <strong>{pendingCreateOption.value}</strong> will be added to the{' '}
+              {pendingCreateOption.type} list for future records.
+            </p>
+
+            <div className={styles.confirmDialogActions}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={closeCreateOptionModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={confirmCreateOption}
+              >
+                Confirm Add
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <form className={styles.form} onSubmit={handleSubmit}>
+        {showBackdatingFields ? (
+          <div className={styles.grid}>
+            <div className={styles.fieldGroup}>
+              <label htmlFor="referenceNumber" className={styles.fieldLabel}>
+                Reference Number
+                <span className={styles.required}>*</span>
+              </label>
+              <input
+                id="referenceNumber"
+                type="text"
+                value={formData.referenceNumber}
+                onChange={(event) =>
+                  updateField('referenceNumber', event.target.value)
+                }
+                className={`${styles.textInput} ${
+                  errors.referenceNumber ? styles.textAreaError : ''
+                }`}
+                placeholder="Enter the reference number."
+              />
+              {errors.referenceNumber ? (
+                <p className={styles.fieldError}>{errors.referenceNumber}</p>
+              ) : null}
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label htmlFor="timestamp" className={styles.fieldLabel}>
+                Timestamp
+                <span className={styles.required}>*</span>
+              </label>
+              <input
+                id="timestamp"
+                type="datetime-local"
+                value={formData.timestamp}
+                onChange={(event) => updateField('timestamp', event.target.value)}
+                className={`${styles.textInput} ${
+                  errors.timestamp ? styles.textAreaError : ''
+                }`}
+              />
+              {errors.timestamp ? (
+                <p className={styles.fieldError}>{errors.timestamp}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className={styles.grid}>
           <div className={styles.fieldGroup}>
             <label htmlFor="particulars" className={styles.fieldLabel}>
@@ -520,25 +1114,26 @@ export default function NewRecordForm({
             ) : null}
           </div>
 
-          <div className={styles.fieldGroup}>
-            <label htmlFor="addressee" className={styles.fieldLabel}>
-              Addressee
-              <span className={styles.required}>*</span>
-            </label>
-            <textarea
-              id="addressee"
-              value={formData.addressee}
-              onChange={(event) => updateField('addressee', event.target.value)}
-              className={`${styles.textArea} ${
-                errors.addressee ? styles.textAreaError : ''
-              }`}
-              rows={4}
-              placeholder="Enter the office, unit, or recipient."
-            />
-            {errors.addressee ? (
-              <p className={styles.fieldError}>{errors.addressee}</p>
-            ) : null}
-          </div>
+          <MultiSelectDropdown
+            label="Addressee"
+            values={formData.addressee}
+            options={localAddresseeOptions}
+            onChange={(value) => updateField('addressee', value)}
+            placeholder="Search addressee"
+            required
+            error={errors.addressee}
+            createLabel="addressee"
+            onCreateOption={(value) =>
+              requestCreateOption('addressee', value, handleCreateAddressee)
+            }
+            isCreatingOption={isAddingAddressee}
+            createOptionHint="Can't find the addressee? Add it here and it will be saved to the Addresse list."
+            selectionLabel="addressee"
+            emptyHint="Choose one or more addressees."
+            comboSuggestions={savedAddresseeCombos}
+            onApplyComboSuggestion={applyAddresseeComboSuggestion}
+            comboSuggestionLabel="Suggested previous combinations"
+          />
 
           <SearchableSelect
             label="Transmitter"
@@ -553,22 +1148,43 @@ export default function NewRecordForm({
           <SearchableSelect
             label="Section"
             value={formData.section}
-            options={sectionOptions}
+            options={localSectionOptions}
             onChange={(value) => updateField('section', value)}
             placeholder="Search section"
             required
             error={errors.section}
+            createLabel="section"
+            onCreateOption={(value) =>
+              requestCreateOption('section', value, handleCreateSection)
+            }
+            isCreatingOption={isAddingSection}
+            createOptionHint="Can't find the section? Add it here and it will be saved to the Section list."
           />
         </div>
 
         <MultiSelectDropdown
           label="Mode of Transmittal"
           values={formData.modeOfTransmittal}
-          options={modeOptions}
+          options={localModeOptions}
           onChange={(value) => updateField('modeOfTransmittal', value)}
           placeholder="Search mode of transmittal"
           required
           error={errors.modeOfTransmittal}
+          createLabel="mode"
+          onCreateOption={(value) =>
+            requestCreateOption(
+              'mode of transmittal',
+              value,
+              handleCreateMode
+            )
+          }
+          isCreatingOption={isAddingMode}
+          createOptionHint="Can't find the mode? Add it here and it will be saved to the Mode list."
+          selectionLabel="mode"
+          emptyHint="Choose one or more modes of transmittal."
+          comboSuggestions={savedModeCombos}
+          onApplyComboSuggestion={applyModeComboSuggestion}
+          comboSuggestionLabel="Suggested previous combinations"
         />
 
         <div className={styles.fieldGroup}>
@@ -586,10 +1202,20 @@ export default function NewRecordForm({
         </div>
 
         <div className={styles.actions}>
-          <Link href="/logbook" className={styles.secondaryButton}>
-            <FiArrowLeft />
-            <span>Back to Logbook</span>
-          </Link>
+          {showBackLink ? (
+            <Link href={backHref} className={styles.secondaryButton}>
+              <FiArrowLeft />
+              <span>Back to Logbook</span>
+            </Link>
+          ) : onCancel ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={onCancel}
+            >
+              <span>{cancelLabel}</span>
+            </button>
+          ) : <span />}
 
           <button
             type="submit"

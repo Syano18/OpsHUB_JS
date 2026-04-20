@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { verifySession } from '@/lib/auth-session';
 import {
-  createDigitalLogbookEntry,
+  createBackdatedDigitalLogbookEntry,
   getDigitalLogbookEntryById,
 } from '@/lib/digital-logbook';
 import {
@@ -15,17 +15,11 @@ import {
   getLogbookSections,
 } from '@/lib/logbook-options';
 
+const BACKDATED_INSERT_ROLES = new Set(['super_admin', 'admin', 'pacd']);
+
 function normalizeText(value) {
   const text = String(value ?? '').trim();
   return text || null;
-}
-
-function normalizeModeValues(value) {
-  return normalizeListValues(value);
-}
-
-function normalizeAddresseeValues(value) {
-  return normalizeListValues(value);
 }
 
 function normalizeListValues(value) {
@@ -50,6 +44,33 @@ function normalizeListValues(value) {
     });
 }
 
+function normalizeReferenceNumber(value) {
+  return normalizeText(value);
+}
+
+function normalizeTimestampValue(value) {
+  const text = String(value ?? '').trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const normalizedTimestamp = text.replace('T', ' ');
+  const timestampPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/;
+
+  if (!timestampPattern.test(normalizedTimestamp)) {
+    return null;
+  }
+
+  return normalizedTimestamp.length === 16
+    ? `${normalizedTimestamp}:00`
+    : normalizedTimestamp;
+}
+
+function isRoleAllowedToBackdate(role) {
+  return BACKDATED_INSERT_ROLES.has(String(role ?? '').trim().toLowerCase());
+}
+
 export async function POST(request) {
   try {
     const session = await verifySession();
@@ -67,15 +88,26 @@ export async function POST(request) {
       );
     }
 
+    if (!isRoleAllowedToBackdate(allowedUser.role)) {
+      return NextResponse.json(
+        { error: 'You are not allowed to create backdated logbook records.' },
+        { status: 403 }
+      );
+    }
+
     const payload = await request.json();
+    const referenceNumber = normalizeReferenceNumber(payload.referenceNumber);
+    const timestamp = normalizeTimestampValue(payload.timestamp);
     const particulars = normalizeText(payload.particulars);
-    const addresseeValues = normalizeAddresseeValues(payload.addressee);
+    const addresseeValues = normalizeListValues(payload.addressee);
     const transmitter = normalizeText(payload.transmitter);
     const section = normalizeText(payload.section);
     const remarks = normalizeText(payload.remarks);
-    const modeValues = normalizeModeValues(payload.modeOfTransmittal);
+    const modeValues = normalizeListValues(payload.modeOfTransmittal);
 
     if (
+      !referenceNumber ||
+      !timestamp ||
       !particulars ||
       !addresseeValues.length ||
       !transmitter ||
@@ -85,7 +117,7 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            'Particulars, Addressee, Transmitter, Section, and at least one Mode of Transmittal are required.',
+            'Reference Number, Timestamp, Particulars, Addressee, Transmitter, Section, and at least one Mode of Transmittal are required.',
         },
         { status: 400 }
       );
@@ -136,7 +168,9 @@ export async function POST(request) {
 
     const encodedBy = allowedUser.email ?? session.email;
 
-    const entryId = await createDigitalLogbookEntry({
+    const entryId = await createBackdatedDigitalLogbookEntry({
+      timestamp,
+      referenceNumber,
       particulars,
       addressee: addresseeValues.join(', '),
       transmitter,
@@ -151,14 +185,15 @@ export async function POST(request) {
 
     return NextResponse.json({
       id: entryId,
-      message: 'Logbook record created successfully.',
-      referenceNumber: createdEntry?.referenceNumber ?? null,
+      message: 'Backdated logbook record created successfully.',
+      referenceNumber: createdEntry?.referenceNumber ?? referenceNumber,
+      timestamp: createdEntry?.timestamp ?? timestamp,
     });
   } catch (error) {
-    console.error('Failed to create Digital Logbook entry.', error);
+    console.error('Failed to create backdated Digital Logbook entry.', error);
 
     return NextResponse.json(
-      { error: 'Unable to save the logbook record right now.' },
+      { error: 'Unable to save the backdated logbook record right now.' },
       { status: 500 }
     );
   }

@@ -1,14 +1,20 @@
 import { getRegisteredUserDisplayNames } from '@/lib/user-permissions';
-import { getLogbookModes, getLogbookSections } from '@/lib/logbook-options';
+import {
+  getLogbookAddressees,
+  getLogbookModes,
+  getLogbookSections,
+} from '@/lib/logbook-options';
 import NewRecordForm from './new-record-form';
 import styles from './new-record-form.module.css';
 
 export default async function NewLogbookRecordPage() {
-  const [transmitterOptions, sectionOptions, modeOptions] = await Promise.all([
+  const [transmitterOptions, addresseeOptions, sectionOptions, modeOptions] =
+    await Promise.all([
     getRegisteredUserDisplayNames(),
+    getLogbookAddressees(),
     getLogbookSections(),
     getLogbookModes(),
-  ]);
+    ]);
 
   return (
     <section className={styles.page}>
@@ -26,6 +32,7 @@ export default async function NewLogbookRecordPage() {
 
         <NewRecordForm
           transmitterOptions={transmitterOptions}
+          addresseeOptions={addresseeOptions}
           sectionOptions={sectionOptions}
           modeOptions={modeOptions}
         />
