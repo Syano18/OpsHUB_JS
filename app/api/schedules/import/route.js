@@ -11,6 +11,7 @@ import {
   collectNotificationFailures,
   sendScheduleAssignmentNotifications,
 } from '@/lib/schedule-notifications';
+import { syncScheduleToPersonalCalendar } from '@/lib/schedule-personal-sync';
 
 const ALL_EMPLOYEES_OPTION = 'All employees';
 
@@ -142,6 +143,7 @@ export async function POST(request) {
 
             if (schedule) {
               insertedSchedules.push(schedule);
+              await syncScheduleToPersonalCalendar({ schedule });
               processedCount++;
               
               controller.enqueue(
@@ -175,6 +177,7 @@ export async function POST(request) {
           }
 
           revalidatePath('/event');
+          revalidatePath('/personal-events');
 
           controller.enqueue(
             encoder.encode(

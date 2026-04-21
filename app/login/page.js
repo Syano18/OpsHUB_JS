@@ -1,11 +1,11 @@
 'use client';
 
-import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FcGoogle } from 'react-icons/fc';
 import { FiEye, FiEyeOff, FiInfo, FiMoon, FiSun } from 'react-icons/fi';
 import {
+  onIdTokenChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -15,12 +15,21 @@ import packageJson from '../../package.json';
 import styles from './login.module.css';
 
 export default function LoginPage() {
+  const appVersion = `v${packageJson.version}`;
   const [isDark, setIsDark] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [updateState, setUpdateState] = useState({
+    status: 'idle',
+    progress: null,
+    message: '',
+    error: null,
+    version: appVersion,
+  });
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [resetEmail, setResetEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -28,10 +37,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [toasts, setToasts] = useState([]);
   const aboutPopoverRef = useRef(null);
+  const lastUpdateStatusRef = useRef('idle');
   const updatesTimeoutRef = useRef(null);
   const toastTimeoutsRef = useRef(new Map());
-  const appVersion = `v${packageJson.version}`;
+  const updateUrl = process.env.NEXT_PUBLIC_UPDATE_URL?.trim() || '';
   const router = useRouter();
+
+  // Initialize theme from localStorage
+  useEffect(() => {
+    const savedTheme = typeof localStorage !== 'undefined'
+      ? localStorage.getItem('theme-preference')
+      : null;
+    const isDarkTheme = savedTheme === 'dark';
+    setIsDark(isDarkTheme);
+    document.documentElement.setAttribute('data-theme', isDarkTheme ? 'dark' : 'light');
+  }, []);
 
   useEffect(() => {
     if (!showAbout) {
@@ -75,6 +95,78 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
+    let restoreAttempted = false;
+    let unsubscribe = () => {};
+
+    const restoreSession = async () => {
+      try {
+        await prepareAuth();
+
+        unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+          if (!isActive || restoreAttempted) {
+            return;
+          }
+
+          restoreAttempted = true;
+
+          if (!firebaseUser) {
+            if (isActive) {
+              setIsRestoringSession(false);
+            }
+            return;
+          }
+
+          try {
+            const existingSession = await fetch('/api/auth/me', {
+              cache: 'no-store',
+            });
+
+            if (existingSession.ok) {
+              router.replace('/event');
+              router.refresh();
+              return;
+            }
+
+            const idToken = await firebaseUser.getIdToken();
+            const response = await fetch('/api/auth/session/refresh', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ idToken }),
+            });
+
+            if (!response.ok) {
+              throw new Error('Unable to restore your last session.');
+            }
+
+            router.replace('/event');
+            router.refresh();
+          } catch (error) {
+            console.error('Failed to restore previous session.', error);
+            if (isActive) {
+              setIsRestoringSession(false);
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Failed to initialize session restoration.', error);
+        if (isActive) {
+          setIsRestoringSession(false);
+        }
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, [router]);
+
+  useEffect(() => {
     if (!showResetModal) {
       return undefined;
     }
@@ -92,6 +184,100 @@ export default function LoginPage() {
     };
   }, [showResetModal]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electronUpdater) {
+      return undefined;
+    }
+
+    let isActive = true;
+    const removeListener = window.electronUpdater.onStatus((nextState) => {
+      if (!isActive) {
+        return;
+      }
+
+      setUpdateState((currentState) => ({
+        ...currentState,
+        ...nextState,
+      }));
+    });
+
+    window.electronUpdater
+      .getState()
+      .then((nextState) => {
+        if (!isActive || !nextState) {
+          return;
+        }
+
+        setUpdateState((currentState) => ({
+          ...currentState,
+          ...nextState,
+        }));
+      })
+      .catch((error) => {
+        console.error('Failed to load updater state.', error);
+      });
+
+    return () => {
+      isActive = false;
+      removeListener();
+    };
+  }, []);
+
+  useEffect(() => {
+    const isBusy =
+      updateState.status === 'checking' || updateState.status === 'downloading';
+    setIsCheckingUpdates(isBusy);
+  }, [updateState.status]);
+
+  useEffect(() => {
+    const previousStatus = lastUpdateStatusRef.current;
+    const currentStatus = updateState.status;
+
+    if (currentStatus === previousStatus && currentStatus !== 'error') {
+      return;
+    }
+
+    lastUpdateStatusRef.current = currentStatus;
+
+    switch (currentStatus) {
+      case 'checking':
+        showToast('warning', updateState.message || 'Checking for updates...', 1800);
+        break;
+      case 'downloading':
+        if (previousStatus !== 'downloading') {
+          showToast(
+            'warning',
+            updateState.message || 'Update found. Downloading now...',
+            2400
+          );
+        }
+        break;
+      case 'up-to-date':
+        if (previousStatus === 'checking') {
+          showToast(
+            'success',
+            updateState.message ||
+              `You are using the latest installed version: ${appVersion}.`
+          );
+        }
+        break;
+      case 'downloaded':
+        showToast(
+          'success',
+          'Update downloaded. Restart now when prompted to finish installing.',
+          5200
+        );
+        break;
+      case 'error':
+        if (updateState.error) {
+          showToast('error', updateState.error);
+        }
+        break;
+      default:
+        break;
+    }
+  }, [appVersion, updateState.error, updateState.message, updateState.status]);
+
   const toggleTheme = () => {
     const nextTheme = !isDark;
     setIsDark(nextTheme);
@@ -101,6 +287,11 @@ export default function LoginPage() {
         'data-theme',
         nextTheme ? 'dark' : 'light'
       );
+    }
+
+    // Persist theme preference to localStorage
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('theme-preference', nextTheme ? 'dark' : 'light');
     }
   };
 
@@ -235,6 +426,36 @@ export default function LoginPage() {
   };
 
   const handleCheckUpdates = () => {
+    if (typeof window !== 'undefined' && window.electronUpdater) {
+      if (updateState.status === 'downloaded') {
+        window.electronUpdater
+          .installUpdate()
+          .then((result) => {
+            if (!result?.ok && result?.error) {
+              showToast('error', result.error);
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to install update.', error);
+            showToast('error', 'Unable to install the downloaded update right now.');
+          });
+        return;
+      }
+
+      window.electronUpdater
+        .checkForUpdates()
+        .then((result) => {
+          if (!result?.ok && result?.error) {
+            showToast('error', result.error);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to check for updates.', error);
+          showToast('error', 'Unable to check for updates right now.');
+        });
+      return;
+    }
+
     if (updatesTimeoutRef.current) {
       clearTimeout(updatesTimeoutRef.current);
     }
@@ -244,11 +465,36 @@ export default function LoginPage() {
 
     updatesTimeoutRef.current = setTimeout(() => {
       setIsCheckingUpdates(false);
+
+      if (updateUrl) {
+        window.open(updateUrl, '_blank', 'noopener,noreferrer');
+        showToast('success', `Opening the update page for ${appVersion}.`);
+        return;
+      }
+
       showToast(
         'success',
         `You are using the latest installed version: ${appVersion}.`
       );
     }, 900);
+  };
+
+  const getUpdateButtonLabel = () => {
+    if (updateState.status === 'checking') {
+      return 'Checking...';
+    }
+
+    if (updateState.status === 'downloading') {
+      return typeof updateState.progress === 'number'
+        ? `Downloading ${updateState.progress}%`
+        : 'Downloading...';
+    }
+
+    if (updateState.status === 'downloaded') {
+      return 'Install update';
+    }
+
+    return 'Check for updates';
   };
 
   const handlePasswordReset = async (event) => {
@@ -372,13 +618,7 @@ export default function LoginPage() {
               >
                 <h4 className={styles.aboutTitle}>About This App</h4>
                 <p className={styles.aboutText}>
-                  The PSA Kalinga Hired Tracking System streamlines personnel
-                  management for Contract of Service Workers (COSWs). It
-                  centralizes monitoring, automates employment and training
-                  certificates, and features a performance evaluation tool.
-                  Supervisor ratings are used as a reference for future hiring,
-                  ensuring a fair, transparent, and efficient system that
-                  reduces paperwork and speeds up hiring for field surveys.
+                  Kalinga OpsHub is a centralized workspace designed to support the daily operations of PSA Kalinga personnel. It provides convenient access to schedules, attendance, personal events, and logbook records in one organized platform. Built to improve coordination and record-keeping, it helps make everyday work more efficient, reliable, and manageable.
                 </p>
                 <hr className={styles.aboutDivider} />
                 <div className={styles.aboutFooterRow}>
@@ -389,7 +629,7 @@ export default function LoginPage() {
                     onClick={handleCheckUpdates}
                     disabled={isCheckingUpdates}
                   >
-                    {isCheckingUpdates ? 'Checking...' : 'Check for updates'}
+                    {getUpdateButtonLabel()}
                   </button>
                 </div>
                 <hr className={styles.aboutDivider} />
@@ -401,13 +641,12 @@ export default function LoginPage() {
 
         <div className={styles.brandBlock}>
           <div>
-            <Image
+            <img
               src="/icons/Logo.png"
               alt="Kalinga OpsHUB logo"
               width={90}
               height={90}
               className={styles.logoImage}
-              priority
             />
           </div>
           <h1 className={styles.title}>Kalinga Operations HUB</h1>
@@ -480,9 +719,13 @@ export default function LoginPage() {
           <button
             type="submit"
             className={styles.primaryButton}
-            disabled={isEmailLoading || isGoogleLoading}
+            disabled={isEmailLoading || isGoogleLoading || isRestoringSession}
           >
-            {isEmailLoading ? 'Signing in...' : 'Sign in'}
+            {isRestoringSession
+              ? 'Restoring session...'
+              : isEmailLoading
+                ? 'Signing in...'
+                : 'Sign in'}
           </button>
 
           <div className={styles.divider}>
@@ -493,13 +736,17 @@ export default function LoginPage() {
             type="button"
             className={styles.googleButton}
             onClick={handleGoogleLogin}
-            disabled={isEmailLoading || isGoogleLoading}
+            disabled={isEmailLoading || isGoogleLoading || isRestoringSession}
           >
             <span className={styles.googleIcon} aria-hidden="true">
               <FcGoogle className={styles.googleBrandIcon} />
             </span>
             <span>
-              {isGoogleLoading ? 'Signing in with Google...' : 'Sign in with Google'}
+              {isRestoringSession
+                ? 'Restoring session...'
+                : isGoogleLoading
+                  ? 'Signing in with Google...'
+                  : 'Sign in with Google'}
             </span>
           </button>
         </form>

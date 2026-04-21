@@ -11,6 +11,7 @@ import {
   collectNotificationFailures,
   sendScheduleAssignmentNotifications,
 } from '@/lib/schedule-notifications';
+import { syncScheduleToPersonalCalendar } from '@/lib/schedule-personal-sync';
 
 const ALL_EMPLOYEES_OPTION = 'All employees';
 
@@ -117,6 +118,10 @@ export async function POST(request) {
       encodedBy: session.email,
     });
 
+    if (schedule) {
+      await syncScheduleToPersonalCalendar({ schedule });
+    }
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -139,6 +144,7 @@ export async function POST(request) {
           });
 
           revalidatePath('/event');
+          revalidatePath('/personal-events');
 
           controller.enqueue(
             encoder.encode(

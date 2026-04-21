@@ -5,12 +5,17 @@ import {
   getRegisteredUserDisplayNames,
   getUserPermissionByEmail,
 } from '@/lib/user-permissions';
-import { updateSchedule } from '@/lib/schedules';
+import {
+  deleteScheduleById,
+  getScheduleById,
+  updateSchedule,
+} from '@/lib/schedules';
 import {
   appendNotificationSummary,
   collectNotificationFailures,
   sendScheduleAssignmentNotifications,
 } from '@/lib/schedule-notifications';
+import { syncScheduleToPersonalCalendar } from '@/lib/schedule-personal-sync';
 
 const ALL_EMPLOYEES_OPTION = 'All employees';
 
@@ -115,6 +120,8 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: assignedToError }, { status: 400 });
     }
 
+    const previousSchedule = await getScheduleById(scheduleId);
+
     const schedule = await updateSchedule(scheduleId, {
       title,
       startDate,
@@ -129,6 +136,11 @@ export async function PUT(request, { params }) {
         { status: 404 }
       );
     }
+
+    await syncScheduleToPersonalCalendar({
+      schedule,
+      previousSchedule,
+    });
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -152,6 +164,7 @@ export async function PUT(request, { params }) {
           });
 
           revalidatePath('/event');
+          revalidatePath('/personal-events');
 
           controller.enqueue(
             encoder.encode(
@@ -196,6 +209,64 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json(
       { error: 'Unable to update schedule right now.' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(_request, { params }) {
+  try {
+    const session = await verifySession();
+
+    if (!session?.email) {
+      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+    }
+
+    const allowedUser = await getUserPermissionByEmail(session.email);
+
+    if (!allowedUser) {
+      return NextResponse.json({ error: 'User is not allowed.' }, { status: 403 });
+    }
+
+    const resolvedParams = await params;
+    const scheduleId = Number(resolvedParams?.id);
+
+    if (!Number.isInteger(scheduleId) || scheduleId <= 0) {
+      return NextResponse.json({ error: 'Invalid schedule id.' }, { status: 400 });
+    }
+
+    const previousSchedule = await getScheduleById(scheduleId);
+
+    if (!previousSchedule) {
+      return NextResponse.json({ error: 'Schedule not found.' }, { status: 404 });
+    }
+
+    const isDeleted = await deleteScheduleById(scheduleId);
+
+    if (!isDeleted) {
+      return NextResponse.json(
+        { error: 'Unable to delete schedule right now.' },
+        { status: 500 }
+      );
+    }
+
+    await syncScheduleToPersonalCalendar({
+      previousSchedule,
+    });
+
+    revalidatePath('/event');
+    revalidatePath('/personal-events');
+
+    return NextResponse.json({
+      success: true,
+      message: 'Schedule deleted successfully.',
+      scheduleId,
+    });
+  } catch (error) {
+    console.error('Failed to delete schedule.', error);
+
+    return NextResponse.json(
+      { error: 'Unable to delete schedule right now.' },
       { status: 500 }
     );
   }

@@ -1,0 +1,137 @@
+.page {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 6px;
+  background: var(--color-bg);
+}
+
+.progressTrack {
+  position: relative;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 72%, transparent 28%);
+}
+
+.progressBar {
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #14b8a6, #5eead4);
+  animation: slide 1.15s ease-in-out infinite;
+}
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  padding: 18px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.08);
+}
+
+.titleBlock {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.titleLine,
+.titleLineShort,
+.metaLine,
+.metaLineShort,
+.cell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-hover) 70%, var(--color-border) 30%);
+}
+
+.titleLine {
+  height: 26px;
+  width: min(84%, 680px);
+}
+
+.titleLineShort {
+  height: 22px;
+  width: min(50%, 420px);
+}
+
+.metaLine {
+  height: 14px;
+  width: 230px;
+}
+
+.metaLineShort {
+  height: 14px;
+  width: 170px;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cell {
+  height: 78px;
+}
+
+.titleLine::after,
+.titleLineShort::after,
+.metaLine::after,
+.metaLineShort::after,
+.cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, #ffffff 50%, transparent 50%),
+    transparent
+  );
+  animation: shimmer 1.25s linear infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(330%);
+  }
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+:global([data-theme='dark']) .card {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+:global([data-theme='dark']) .titleLine::after,
+:global([data-theme='dark']) .titleLineShort::after,
+:global([data-theme='dark']) .metaLine::after,
+:global([data-theme='dark']) .metaLineShort::after,
+:global([data-theme='dark']) .cell::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, #e2e8f0 24%, transparent 76%),
+    transparent
+  );
+}

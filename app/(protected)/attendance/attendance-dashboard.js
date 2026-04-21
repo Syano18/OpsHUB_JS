@@ -608,7 +608,7 @@ export default function AttendanceDashboard({
         </div>
 
       {selectedRecord && isDrawerOpen ? (
-        <div className={styles.drawerBackdrop} onClick={() => setIsDrawerOpen(false)}>
+        <div className={styles.drawerBackdrop}>
           <aside
             className={styles.drawer}
             onClick={(event) => event.stopPropagation()}

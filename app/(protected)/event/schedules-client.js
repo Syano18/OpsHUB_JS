@@ -9,6 +9,7 @@ import {
   FiPlus,
   FiSave,
   FiSearch,
+  FiTrash2,
   FiUpload,
   FiX,
 } from 'react-icons/fi';
@@ -462,6 +463,8 @@ export default function SchedulesClient({
   const [submitLabel, setSubmitLabel] = useState('Saving...');
   const [isImporting, setIsImporting] = useState(false);
   const [importLabel, setImportLabel] = useState('Importing...');
+  const [deletingScheduleId, setDeletingScheduleId] = useState(null);
+  const [deleteCandidateSchedule, setDeleteCandidateSchedule] = useState(null);
   const [notificationFailures, setNotificationFailures] = useState([]);
   const [toasts, setToasts] = useState([]);
   const importInputRef = useRef(null);
@@ -492,6 +495,14 @@ export default function SchedulesClient({
       setNotificationFailures(failures);
     }
   }, []);
+
+  const closeDeleteScheduleDialog = useCallback(() => {
+    if (deletingScheduleId) {
+      return;
+    }
+
+    setDeleteCandidateSchedule(null);
+  }, [deletingScheduleId]);
 
   useEffect(() => {
     setSchedules(sortSchedules(initialSchedules));
@@ -844,6 +855,46 @@ export default function SchedulesClient({
     }
   };
 
+  const openDeleteScheduleDialog = (schedule) => {
+    if (!schedule?.id || deletingScheduleId || isSubmitting) {
+      return;
+    }
+
+    setDeleteCandidateSchedule(schedule);
+  };
+
+  const handleConfirmDeleteSchedule = async () => {
+    const schedule = deleteCandidateSchedule;
+
+    if (!schedule?.id || deletingScheduleId || isSubmitting) {
+      return;
+    }
+
+    setDeletingScheduleId(schedule.id);
+
+    try {
+      const response = await fetch(`/api/schedules/${schedule.id}`, {
+        method: 'DELETE',
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to delete schedule right now.');
+      }
+
+      setSchedules((currentSchedules) =>
+        currentSchedules.filter((currentSchedule) => currentSchedule.id !== schedule.id)
+      );
+      setDeleteCandidateSchedule(null);
+      showToast('success', payload?.message || 'Schedule deleted successfully.');
+    } catch (error) {
+      showToast('error', error.message || 'Unable to delete schedule right now.', 5200);
+    } finally {
+      setDeletingScheduleId(null);
+    }
+  };
+
   return (
     <>
       <section className={styles.page}>
@@ -882,7 +933,9 @@ export default function SchedulesClient({
                   onClick={() => setScheduleFilter('upcoming')}
                   aria-pressed={scheduleFilter === 'upcoming'}
                 >
-                  <span className={styles.filterBadge}>{upcomingCount}</span>
+                  {upcomingCount > 0 ? (
+                    <span className={styles.filterBadge}>{upcomingCount}</span>
+                  ) : null}
                   <span>Upcoming</span>
                 </button>
                 <button
@@ -893,7 +946,9 @@ export default function SchedulesClient({
                   onClick={() => setScheduleFilter('ongoing')}
                   aria-pressed={scheduleFilter === 'ongoing'}
                 >
-                  <span className={styles.filterBadge}>{ongoingCount}</span>
+                  {ongoingCount > 0 ? (
+                    <span className={styles.filterBadge}>{ongoingCount}</span>
+                  ) : null}
                   <span>Ongoing</span>
                 </button>
                 <button
@@ -951,14 +1006,28 @@ export default function SchedulesClient({
                     <div className={styles.scheduleHeader}>
                       <div className={styles.scheduleHeaderTop}>
                         <h2 className={styles.scheduleTitle}>{schedule.title}</h2>
-                        <button
-                          type="button"
-                          className={styles.cardActionButton}
-                          onClick={() => openEditDialog(schedule)}
-                        >
-                          <FiEdit2 aria-hidden="true" />
-                          <span>Edit</span>
-                        </button>
+                          <div className={styles.cardActions}>
+                            <button
+                              type="button"
+                              className={styles.cardActionButton}
+                              onClick={() => openEditDialog(schedule)}
+                              disabled={deletingScheduleId === schedule.id}
+                            >
+                              <FiEdit2 aria-hidden="true" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.cardActionButton} ${styles.cardDeleteButton}`}
+                              onClick={() => openDeleteScheduleDialog(schedule)}
+                              disabled={deletingScheduleId === schedule.id}
+                            >
+                              <FiTrash2 aria-hidden="true" />
+                              <span>
+                                {deletingScheduleId === schedule.id ? 'Deleting...' : 'Delete'}
+                              </span>
+                            </button>
+                          </div>
                       </div>
                       <p className={styles.scheduleDate}>
                         {formatDateRange(schedule.startDate, schedule.endDate)}
@@ -1172,6 +1241,66 @@ export default function SchedulesClient({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteCandidateSchedule ? (
+        <div className={styles.insertDialogBackdrop} onClick={closeDeleteScheduleDialog}>
+          <div
+            className={styles.confirmDeleteDialog}
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm schedule deletion"
+          >
+            <div className={styles.insertDialogHeader}>
+              <div>
+                <p className={styles.insertDialogEyebrow}>Schedules</p>
+                <h2 className={styles.insertDialogTitle}>Confirm Delete</h2>
+                <p className={styles.insertDialogText}>
+                  This will delete the schedule and remove synced personal calendar entries.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={styles.insertDialogClose}
+                onClick={closeDeleteScheduleDialog}
+                disabled={Boolean(deletingScheduleId)}
+                aria-label="Close delete schedule confirmation dialog"
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className={styles.confirmDeleteBody}>
+              <p className={styles.confirmDeleteMessage}>
+                Delete schedule "{deleteCandidateSchedule.title || 'Untitled schedule'}"?
+              </p>
+              <p className={styles.confirmDeleteWarning}>
+                Date: {formatDateRange(deleteCandidateSchedule.startDate, deleteCandidateSchedule.endDate)}
+              </p>
+
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={closeDeleteScheduleDialog}
+                  disabled={Boolean(deletingScheduleId)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.confirmDeleteButton}
+                  onClick={handleConfirmDeleteSchedule}
+                  disabled={Boolean(deletingScheduleId)}
+                >
+                  <FiTrash2 aria-hidden="true" />
+                  <span>{deletingScheduleId ? 'Deleting...' : 'Delete Schedule'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

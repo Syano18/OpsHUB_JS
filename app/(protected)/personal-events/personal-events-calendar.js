@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { FiChevronLeft, FiChevronRight, FiX } from 'react-icons/fi';
+import ToastStack from '@/components/shared/toast-stack';
 import styles from './personal-events.module.css';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -36,7 +37,7 @@ function getTodayIsoDate() {
   ).padStart(2, '0')}`;
 }
 
-export default function PersonalEventsCalendar({ displayName }) {
+export default function PersonalEventsCalendar() {
   const [activeMonth, setActiveMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -49,6 +50,25 @@ export default function PersonalEventsCalendar({ displayName }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingEventId, setEditingEventId] = useState(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [deletingEventId, setDeletingEventId] = useState(null);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = useCallback((type, message, duration = 4200) => {
+    const toastId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+
+    setToasts((currentToasts) => [
+      ...currentToasts,
+      { id: toastId, message, type, duration },
+    ]);
+  }, []);
+
+  const dismissToast = useCallback((toastId) => {
+    setToasts((currentToasts) => currentToasts.filter((toast) => toast.id !== toastId));
+  }, []);
 
   useEffect(() => {
     fetch('/api/personal')
@@ -82,6 +102,9 @@ export default function PersonalEventsCalendar({ displayName }) {
           setNewEventStartDate('');
           setEditingEventId(null);
           setIsFormModalOpen(false);
+          showToast('success', 'Event updated successfully.');
+        } else {
+          showToast('error', 'Unable to update event right now.');
         }
       } else {
         const payload = { date: activeStartDate, endDate: newEventEndDate || activeStartDate, events: newEventText };
@@ -104,8 +127,60 @@ export default function PersonalEventsCalendar({ displayName }) {
       }
     } catch (err) {
       console.error(err);
+      if (editingEventId) {
+        showToast('error', 'Unable to update event right now.');
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteEvent = (eventItem) => {
+    if (!eventItem?.id || deletingEventId || eventItem?.is_schedule_event) return;
+    setDeleteCandidate(eventItem);
+  };
+
+  const handleEditEvent = (eventItem) => {
+    if (!eventItem?.id || eventItem?.is_schedule_event) return;
+
+    setEditingEventId(eventItem.id);
+    setNewEventText(eventItem.events);
+    setNewEventStartDate(eventItem.date);
+    setNewEventEndDate(eventItem.end_date === eventItem.date ? '' : eventItem.end_date);
+    setIsFormModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteCandidate?.id || deletingEventId) return;
+
+    const eventId = deleteCandidate.id;
+    setDeletingEventId(eventId);
+    try {
+      const res = await fetch('/api/personal', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: eventId }),
+      });
+
+      if (res.ok) {
+        setEventsData((currentEvents) => currentEvents.filter((eventItem) => eventItem.id !== eventId));
+        if (editingEventId === eventId) {
+          setEditingEventId(null);
+          setIsFormModalOpen(false);
+          setNewEventText('');
+          setNewEventStartDate('');
+          setNewEventEndDate('');
+        }
+        setDeleteCandidate(null);
+        showToast('success', 'Event deleted successfully.');
+      } else {
+        showToast('error', 'Unable to delete event right now.');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('error', 'Unable to delete event right now.');
+    } finally {
+      setDeletingEventId(null);
     }
   };
 
@@ -131,6 +206,8 @@ export default function PersonalEventsCalendar({ displayName }) {
 
   return (
     <section className={styles.page}>
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+
       <div className={styles.calendarShell}>
         <div className={styles.header}>
           <div className={styles.headingBlock}>
@@ -220,11 +297,11 @@ export default function PersonalEventsCalendar({ displayName }) {
       </div>
 
       {selectedDate && (
-        <div className={styles.modalBackdrop} onClick={() => setSelectedDate(null)}>
+        <div className={styles.modalBackdrop} onClick={() => { setSelectedDate(null); setDeleteCandidate(null); }}>
           <div className={styles.modalSurface} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3 className={styles.modalTitle}>Events for {selectedDate.isoDate}</h3>
-              <button type="button" className={styles.ghostButton} onClick={() => { setSelectedDate(null); setNewEventText(''); setNewEventEndDate(''); setNewEventStartDate(''); setEditingEventId(null); }}>
+              <button type="button" className={styles.ghostButton} onClick={() => { setSelectedDate(null); setNewEventText(''); setNewEventEndDate(''); setNewEventStartDate(''); setEditingEventId(null); setDeleteCandidate(null); }}>
                 <FiX aria-label="Close" />
               </button>
             </div>
@@ -234,19 +311,27 @@ export default function PersonalEventsCalendar({ displayName }) {
                 <div key={idx} className={styles.eventItem}>
                   <div className={styles.eventTextWrapper}>
                     <span>{e.events}</span>
-                    <button 
-                      type="button" 
-                      className={styles.editButtonSmall}
-                      onClick={() => {
-                         setEditingEventId(e.id);
-                         setNewEventText(e.events);
-                         setNewEventStartDate(e.date);
-                         setNewEventEndDate(e.end_date === e.date ? '' : e.end_date);
-                         setIsFormModalOpen(true);
-                      }}
-                    >
-                      Edit
-                    </button>
+                    <div className={styles.eventActions}>
+                      {!e.is_schedule_event ? (
+                        <button
+                          type="button"
+                          className={styles.editButtonSmall}
+                          onClick={() => handleEditEvent(e)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {!e.is_schedule_event ? (
+                        <button
+                          type="button"
+                          className={styles.deleteButtonSmall}
+                          onClick={() => handleDeleteEvent(e)}
+                          disabled={deletingEventId === e.id}
+                        >
+                          {deletingEventId === e.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   {e.end_date && e.end_date !== e.date && (
                     <div className={styles.eventDateRange}>{e.date} to {e.end_date}</div>
@@ -335,6 +420,55 @@ export default function PersonalEventsCalendar({ displayName }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteCandidate && (
+        <div
+          className={styles.modalBackdrop}
+          style={{ zIndex: 70 }}
+          onClick={() => {
+            if (!deletingEventId) {
+              setDeleteCandidate(null);
+            }
+          }}
+        >
+          <div className={styles.confirmModalSurface} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Confirm Delete</h3>
+              <button
+                type="button"
+                className={styles.ghostButton}
+                onClick={() => setDeleteCandidate(null)}
+                disabled={Boolean(deletingEventId)}
+              >
+                <FiX aria-label="Close" />
+              </button>
+            </div>
+
+            <p className={styles.confirmDeleteText}>
+              Delete event "{deleteCandidate.events}"? This action cannot be undone.
+            </p>
+
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.ghostButton}
+                onClick={() => setDeleteCandidate(null)}
+                disabled={Boolean(deletingEventId)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.confirmDeleteButton}
+                onClick={handleConfirmDelete}
+                disabled={Boolean(deletingEventId)}
+              >
+                {deletingEventId === deleteCandidate.id ? 'Deleting...' : 'Delete Event'}
+              </button>
+            </div>
           </div>
         </div>
       )}

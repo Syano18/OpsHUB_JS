@@ -19,30 +19,9 @@ export async function POST(request) {
     }
 
     const decodedToken = await adminAuth.verifyIdToken(idToken);
-    const isRecentSignIn =
-      typeof decodedToken.auth_time === 'number' &&
-      Date.now() / 1000 - decodedToken.auth_time < 5 * 60;
-
-    if (!isRecentSignIn) {
-      return NextResponse.json(
-        { error: 'Please sign in again before creating a session.' },
-        { status: 401 }
-      );
-    }
-
     const allowedUser = await getUserPermissionByEmail(decodedToken.email);
 
     if (!allowedUser) {
-      try {
-        const signInProvider = decodedToken.firebase?.sign_in_provider ?? null;
-
-        if (signInProvider === 'google.com') {
-          await adminAuth.deleteUser(decodedToken.uid);
-        }
-      } catch (deleteError) {
-        console.error('Failed to remove unauthorized Firebase user.', deleteError);
-      }
-
       return NextResponse.json(
         {
           error:
@@ -75,10 +54,10 @@ export async function POST(request) {
 
     return response;
   } catch (error) {
-    console.error('Failed to create auth session.', error);
+    console.error('Failed to refresh auth session.', error);
 
     return NextResponse.json(
-      { error: 'Unable to start a secure session right now.' },
+      { error: 'Unable to refresh your session right now.' },
       { status: 401 }
     );
   }

@@ -1,16 +1,26 @@
 {
   "name": "kalinga-opshub",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
+  "description": "Desktop operations hub for Kalinga personnel, schedules, attendance, and logbook workflows.",
+  "author": "PSA Kalinga ISA II",
+  "main": "main.js",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev:electron": "concurrently \"next dev\" \"wait-on tcp:3000 && electron .\"",
+    "build:icon": "node scripts/generate-windows-icon.mjs",
+    "build": "next build --webpack",
+    "build:electron": "npm run pack:notifier && npm run build:icon && npm run build && electron-builder",
+    "start": "node launcher.js",
+    "electron": "electron .",
+    "lint": "eslint",
+    "pack:notifier": "pyinstaller --noconfirm --windowed --onefile --name \"Notifier\" --add-data \".env.local;.\" --exclude-module PyQt5 --exclude-module PySide6 \"Notifier.pyw\""
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
     "@lottiefiles/dotlottie-react": "^0.19.0",
+    "dotenv": "^17.4.2",
+    "electron-updater": "^6.8.3",
     "firebase": "^12.12.0",
     "firebase-admin": "^13.8.0",
     "next": "16.2.3",
@@ -23,9 +33,79 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^8.2.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^25.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0"
+    "jest-environment-jsdom": "^30.3.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.kalingaopshub.app",
+    "productName": "Kalinga OpsHub",
+    "artifactName": "Kalinga-OpsHub-Setup-${version}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Syano18",
+        "repo": "OpsHUB_JS",
+        "releaseType": "draft"
+      }
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": ".next/standalone"
+      },
+      {
+        "from": "node_modules/@libsql/win32-x64-msvc",
+        "to": ".next/standalone/node_modules/@libsql/win32-x64-msvc"
+      },
+      {
+        "from": ".next/static",
+        "to": ".next/standalone/.next/static"
+      },
+      {
+        "from": "public",
+        "to": "public"
+      },
+      {
+        "from": "public",
+        "to": ".next/standalone/public"
+      },
+      {
+        "from": ".env.local",
+        "to": ".env.local"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "dist/Notifier.exe",
+        "to": "Notifier.exe"
+      }
+    ],
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icons/Logo.ico"
+    },
+    "nsis": {
+      "installerIcon": "public/icons/Logo.ico",
+      "uninstallerIcon": "public/icons/Logo.ico",
+      "installerHeaderIcon": "public/icons/Logo.ico",
+      "createDesktopShortcut": "always",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

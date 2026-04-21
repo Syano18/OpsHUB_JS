@@ -15,8 +15,8 @@ import {
   FiMoon,
   FiSun,
 } from 'react-icons/fi';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase-client';
+import { onIdTokenChanged, signOut } from 'firebase/auth';
+import { auth, prepareAuth } from '@/lib/firebase-client';
 import styles from './protected-shell.module.css';
 
 const navLinks = [
@@ -57,10 +57,23 @@ export default function ProtectedShell({ children, user }) {
   const userInitials = getUserInitials(user?.name, user?.email);
 
   useEffect(() => {
-    const currentTheme =
-      document.documentElement.getAttribute('data-theme') || 'light';
+    // Load theme preference from localStorage first, then fallback to DOM attribute
+    const savedTheme = typeof localStorage !== 'undefined' 
+      ? localStorage.getItem('theme-preference')
+      : null;
+    const currentTheme = savedTheme || 
+      document.documentElement.getAttribute('data-theme') || 
+      'light';
     setIsDarkMode(currentTheme === 'dark');
+    document.documentElement.setAttribute('data-theme', currentTheme);
   }, []);
+
+  useEffect(() => {
+    // Warm route data for faster transitions between protected pages.
+    navLinks.forEach((link) => {
+      router.prefetch(link.href);
+    });
+  }, [router]);
 
   useEffect(() => {
     let lastVersion = null;
@@ -95,13 +108,66 @@ export default function ProtectedShell({ children, user }) {
     };
   }, [router]);
 
+  useEffect(() => {
+    let isActive = true;
+    let unsubscribe = () => {};
+
+    const renewServerSession = async (firebaseUser) => {
+      if (!firebaseUser) {
+        return;
+      }
+
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        await fetch('/api/auth/session/refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ idToken }),
+        });
+      } catch (error) {
+        console.error('Failed to renew auth session.', error);
+      }
+    };
+
+    const startRenewal = async () => {
+      try {
+        await prepareAuth();
+
+        if (!isActive) {
+          return;
+        }
+
+        unsubscribe = onIdTokenChanged(auth, (firebaseUser) => {
+          if (!isActive) {
+            return;
+          }
+
+          renewServerSession(firebaseUser);
+        });
+      } catch (error) {
+        console.error('Failed to initialize auth session renewal.', error);
+      }
+    };
+
+    startRenewal();
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, []);
+
   const toggleTheme = () => {
     const nextDarkMode = !isDarkMode;
+    const themeValue = nextDarkMode ? 'dark' : 'light';
     setIsDarkMode(nextDarkMode);
-    document.documentElement.setAttribute(
-      'data-theme',
-      nextDarkMode ? 'dark' : 'light'
-    );
+    document.documentElement.setAttribute('data-theme', themeValue);
+    // Persist theme preference to localStorage
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('theme-preference', themeValue);
+    }
   };
 
   const handleLogout = async () => {
@@ -197,6 +263,7 @@ export default function ProtectedShell({ children, user }) {
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch
                 className={`${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}
                 title={isCollapsed ? link.name : undefined}
               >
