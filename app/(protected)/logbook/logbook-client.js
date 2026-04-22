@@ -647,8 +647,8 @@ export default function LogbookClient({
   const dialogText = isInsertDialog
     ? 'Add a missing earlier logbook entry with a custom reference number and timestamp.'
     : isEditDialog
-      ? 'Update the selected routing details without leaving the logbook table.'
-      : 'Capture the routing details and save a new logbook entry without leaving the table.';
+      ? 'Update the selected routing details.'
+      : 'Capture the routing details and save a new logbook entry.';
 
   return (
     <>
@@ -742,7 +742,7 @@ export default function LogbookClient({
       ) : null}
 
       <div className={styles.tableCard} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 34%), linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 50%), var(--color-surface)' }}>
-        <div style={{ margin: '0 24px', padding: '24px 0 20px', borderBottom: '1px solid var(--color-border)' }}>
+        <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid var(--color-border)' }}>
           <div className={styles.headingBlock}>
             <h1 className={styles.title}>Digital Logbook</h1>
           </div>

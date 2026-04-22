@@ -10,7 +10,6 @@ import {
   getUserPermissionByEmail,
 } from '@/lib/user-permissions';
 import {
-  getLogbookAddressees,
   getLogbookModes,
   getLogbookSections,
 } from '@/lib/logbook-options';
@@ -123,24 +122,12 @@ export async function POST(request) {
       );
     }
 
-    const [registeredUsers, allowedAddressees, allowedSections, allowedModes] =
+    const [registeredUsers, allowedSections, allowedModes] =
       await Promise.all([
         getRegisteredUserDisplayNames(),
-        getLogbookAddressees(),
         getLogbookSections(),
         getLogbookModes(),
       ]);
-
-    if (
-      addresseeValues.some(
-        (addressee) => !allowedAddressees.includes(addressee)
-      )
-    ) {
-      return NextResponse.json(
-        { error: 'Please choose valid addressee values.' },
-        { status: 400 }
-      );
-    }
 
     if (!registeredUsers.includes(transmitter)) {
       return NextResponse.json(

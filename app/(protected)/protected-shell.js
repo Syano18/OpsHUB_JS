@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   FiBookOpen,
+  FiBriefcase,
   FiCalendar,
   FiClock,
   FiChevronLeft,
@@ -23,6 +24,7 @@ const navLinks = [
   { name: 'Schedules', href: '/event', icon: FiCalendar },
   { name: 'Digital Logbook', href: '/logbook', icon: FiBookOpen },
   { name: 'Attendance Monitoring', href: '/attendance', icon: FiClipboard },
+  { name: 'Leave Monitoring', href: '/leave-monitoring', icon: FiBriefcase },
   { name: 'Personal Events', href: '/personal-events', icon: FiClock },
 ];
 

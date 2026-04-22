@@ -578,6 +578,8 @@
 
 .tableWrap :global(table) {
   min-width: 1080px;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .tableWrap :global(thead th) {
@@ -585,7 +587,23 @@
   top: 0;
   z-index: 1;
   background: var(--color-surface);
-  box-shadow: 0 1px 0 var(--color-border);
+  box-shadow:
+    inset 0 1px 0 var(--color-border),
+    inset 0 -1px 0 var(--color-border);
+}
+
+.tableWrap :global(thead th:first-child) {
+  box-shadow:
+    inset 1px 0 0 var(--color-border),
+    inset 0 1px 0 var(--color-border),
+    inset 0 -1px 0 var(--color-border);
+}
+
+.tableWrap :global(thead th:last-child) {
+  box-shadow:
+    inset -1px 0 0 var(--color-border),
+    inset 0 1px 0 var(--color-border),
+    inset 0 -1px 0 var(--color-border);
 }
 
 .emptyText,

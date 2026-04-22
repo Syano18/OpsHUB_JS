@@ -9,6 +9,7 @@ const { autoUpdater } = require('electron-updater');
 let mainWindow;
 let serverProcess = null;
 let isUpdaterInitialized = false;
+let isServerReadyState = false;
 const PORT = 3000;
 const APP_URL = `http://localhost:${PORT}/login`;
 const HEALTHCHECK_URL = APP_URL;
@@ -180,6 +181,103 @@ function getSystemLogoPath() {
 
 function getGoogleLogoPath() {
   return path.join(getRuntimeAppRoot(), 'public', 'icons', 'google.ico');
+}
+
+function getLoadingScreenUrl() {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Kalinga OpsHub</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(190, 222, 255, 0.95), transparent 48%),
+          linear-gradient(160deg, #f4f8fc 0%, #dfe9f5 100%);
+        color: #16324f;
+      }
+
+      main {
+        width: min(420px, calc(100vw - 48px));
+        padding: 32px 28px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 22px 60px rgba(22, 50, 79, 0.18);
+        text-align: center;
+      }
+
+      .spinner {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto 20px;
+        border-radius: 50%;
+        border: 5px solid rgba(26, 74, 122, 0.12);
+        border-top-color: #1a4a7a;
+        animation: spin 0.9s linear infinite;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 1.7rem;
+        line-height: 1.15;
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.5;
+        color: rgba(22, 50, 79, 0.8);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Opening Kalinga OpsHub</h1>
+      <p>The desktop shell is ready. The local app server is finishing startup.</p>
+    </main>
+  </body>
+</html>`;
+
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
+}
+
+function loadAppIntoWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const currentUrl = mainWindow.webContents.getURL();
+  if (currentUrl === APP_URL) {
+    return;
+  }
+
+  logDebug('Loading URL', APP_URL);
+  mainWindow.loadURL(APP_URL).catch((error) => {
+    logDebug('Failed to load app URL', error.message);
+  });
 }
 
 function isServerReady() {
@@ -355,8 +453,13 @@ function createWindow() {
       show: false,
     });
 
-    logDebug('Loading URL', APP_URL);
-    mainWindow.loadURL(APP_URL);
+    mainWindow.loadURL(getLoadingScreenUrl()).catch((error) => {
+      logDebug('Failed to load startup screen', error.message);
+    });
+
+    if (isServerReadyState) {
+      loadAppIntoWindow();
+    }
 
     mainWindow.webContents.on('did-finish-load', () => {
       broadcastUpdaterState();
@@ -430,6 +533,7 @@ function createWindow() {
 app.on('ready', async () => {
   logDebug('Electron app ready event fired');
   Menu.setApplicationMenu(null);
+  createWindow();
   initializeAutoUpdater();
   startEmbeddedServer();
   logDebug('Waiting for server to start');
@@ -437,8 +541,9 @@ app.on('ready', async () => {
   const ready = await waitForServer();
 
   if (ready) {
-    logDebug('Server started successfully. Creating window.');
-    createWindow();
+    isServerReadyState = true;
+    logDebug('Server started successfully. Loading app into window.');
+    loadAppIntoWindow();
   } else {
     logDebug('Server failed to start within timeout period.');
     app.quit();

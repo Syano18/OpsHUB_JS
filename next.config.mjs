@@ -5,6 +5,9 @@ const nextConfig = {
   devIndicators: false,
   output: 'standalone',
   serverExternalPackages: ['firebase-admin'],
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;

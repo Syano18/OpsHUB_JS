@@ -107,6 +107,18 @@ function saveStoredCombo(memoryKey, values) {
   }
 }
 
+function includesValueIgnoreCase(values, targetValue) {
+  const normalizedTargetValue = String(targetValue ?? '').trim().toLowerCase();
+
+  if (!normalizedTargetValue) {
+    return false;
+  }
+
+  return values.some(
+    (value) => String(value ?? '').trim().toLowerCase() === normalizedTargetValue
+  );
+}
+
 function SearchableSelect({
   label,
   value,
@@ -295,6 +307,9 @@ function MultiSelectDropdown({
   comboSuggestions = [],
   onApplyComboSuggestion = null,
   comboSuggestionLabel = 'Saved combinations',
+  allowCustomValue = false,
+  onAddCustomValue = null,
+  customValueLabel = 'Use without saving',
 }) {
   const listId = useId();
   const containerRef = useRef(null);
@@ -316,7 +331,12 @@ function MultiSelectDropdown({
   const canCreateOption =
     Boolean(onCreateOption) &&
     Boolean(trimmedQuery) &&
-    !options.some((option) => option.toLowerCase() === trimmedQuery.toLowerCase());
+    !includesValueIgnoreCase(options, trimmedQuery);
+  const canAddCustomValue =
+    allowCustomValue &&
+    Boolean(trimmedQuery) &&
+    !includesValueIgnoreCase(options, trimmedQuery) &&
+    !includesValueIgnoreCase(values, trimmedQuery);
   const filteredComboSuggestions = trimmedQuery
     ? comboSuggestions.filter((combo) => {
         const comboKey = combo.map((value) => value.toLowerCase()).join('||');
@@ -337,6 +357,16 @@ function MultiSelectDropdown({
       onChange([...values, option]);
     }
 
+    setQuery('');
+    setIsOpen(true);
+  };
+
+  const addCustomValue = () => {
+    if (!canAddCustomValue || typeof onAddCustomValue !== 'function') {
+      return;
+    }
+
+    onAddCustomValue(trimmedQuery);
     setQuery('');
     setIsOpen(true);
   };
@@ -390,9 +420,11 @@ function MultiSelectDropdown({
                 if (event.key === 'Enter') {
                   event.preventDefault();
 
-                  if (filteredOptions[0]) {
-                    addValue(filteredOptions[0]);
-                  }
+                if (filteredOptions[0]) {
+                  addValue(filteredOptions[0]);
+                } else if (canAddCustomValue) {
+                  addCustomValue();
+                }
                 }
 
                 if (event.key === 'Backspace' && !query && values.length) {
@@ -452,6 +484,16 @@ function MultiSelectDropdown({
                     <FiPlusBadge />
                   </button>
                 ))}
+                {canAddCustomValue ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={addCustomValue}
+                  >
+                    <span>{`${customValueLabel}: ${trimmedQuery}`}</span>
+                    <FiCheck />
+                  </button>
+                ) : null}
                 {canCreateOption ? (
                   <button
                     type="button"
@@ -470,6 +512,16 @@ function MultiSelectDropdown({
               </>
             ) : (
               <>
+                {canAddCustomValue ? (
+                  <button
+                    type="button"
+                    className={`${styles.optionButton} ${styles.createOptionButton}`}
+                    onClick={addCustomValue}
+                  >
+                    <span>{`${customValueLabel}: ${trimmedQuery}`}</span>
+                    <FiCheck />
+                  </button>
+                ) : null}
                 {canCreateOption ? (
                   <button
                     type="button"
@@ -484,13 +536,13 @@ function MultiSelectDropdown({
                     </span>
                     <FiPlusBadge />
                   </button>
-                ) : (
+                ) : !canAddCustomValue ? (
                   <p className={styles.optionEmpty}>
                     {values.length === options.length
                       ? 'All modes selected.'
                       : 'No matching modes.'}
                   </p>
-                )}
+                ) : null}
                 {createOptionHint ? (
                   <p className={styles.optionHint}>{createOptionHint}</p>
                 ) : null}
@@ -1131,9 +1183,12 @@ export default function NewRecordForm({
             selectionLabel="addressee"
             emptyHint="Choose one or more addressees."
             comboSuggestions={savedAddresseeCombos}
-            onApplyComboSuggestion={applyAddresseeComboSuggestion}
-            comboSuggestionLabel="Suggested previous combinations"
-          />
+          onApplyComboSuggestion={applyAddresseeComboSuggestion}
+          comboSuggestionLabel="Suggested previous combinations"
+          allowCustomValue
+          onAddCustomValue={appendAddresseeValue}
+          customValueLabel="Use addressee without saving"
+        />
 
           <SearchableSelect
             label="Transmitter"
