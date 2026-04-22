@@ -442,6 +442,20 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
     setFormError('');
   };
 
+  const handleLeaveTypeChange = (event) => {
+    const nextLeaveType = event.target.value;
+
+    setFormData((current) => ({
+      ...current,
+      leaveType: nextLeaveType,
+      locationScope: '',
+      locationDetails: '',
+      sickLeaveMode: '',
+      illnessDetails: '',
+    }));
+    setFormError('');
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -585,12 +599,7 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
                     <select
                       className={styles.selectInput}
                       value={formData.leaveType}
-                      onChange={(event) =>
-                        setFormData((current) => ({
-                          ...current,
-                          leaveType: event.target.value,
-                        }))
-                      }
+                      onChange={handleLeaveTypeChange}
                       required
                     >
                       <option value="">Select leave type</option>
