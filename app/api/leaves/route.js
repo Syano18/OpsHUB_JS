@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { verifySession } from '@/lib/auth-session';
 import { createLeaveRequest } from '@/lib/leaves';
+import { createNotifications } from '@/lib/notifications';
 import { getUserPermissionByEmail } from '@/lib/user-permissions';
+import { getUsersByRoles } from '@/lib/user-permissions';
 
 function normalizeText(value) {
   const normalizedValue = String(value ?? '').trim();
@@ -49,10 +51,32 @@ export async function POST(request) {
       reason,
     });
 
+    if (createdRequest?.requestGroupId) {
+      const approvers = await getUsersByRoles(['admin', 'super_admin']);
+      const leaveLabel = leaveType.replace(/_/g, ' ');
+      const leaveCount = createdRequest.requestedDays ?? leaveDates.length;
+
+      await createNotifications(
+        approvers.map((approver) => ({
+          recipientEmail: approver.email,
+          actorEmail: allowedUser.email ?? session.email,
+          actorName: allowedUser.name ?? session.name ?? session.email,
+          type: 'leave_request',
+          title: 'New leave request',
+          message: `${
+            allowedUser.name ?? session.name ?? session.email
+          } filed ${leaveCount} ${leaveCount === 1 ? 'leave date' : 'leave dates'} for ${leaveLabel}.`,
+          relatedEntityType: 'leave_request',
+          relatedEntityId: createdRequest.requestGroupId,
+        }))
+      );
+    }
+
     revalidatePath('/leave-monitoring');
 
     return NextResponse.json({
       id: createdRequest?.id ?? null,
+      requestGroupId: createdRequest?.requestGroupId ?? null,
       requestedDays: createdRequest?.requestedDays ?? 0,
       message:
         createdRequest?.requestedDays > 1

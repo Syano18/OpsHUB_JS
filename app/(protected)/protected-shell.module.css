@@ -92,6 +92,10 @@
   gap: 10px;
 }
 
+.notificationShell {
+  position: relative;
+}
+
 .circleButton {
   width: 40px;
   height: 40px;
@@ -107,6 +111,211 @@
     color 0.2s ease,
     border-color 0.2s ease,
     transform 0.2s ease;
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: 999px;
+  background: #dc2626;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notificationPanel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(72vh, 680px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 20%),
+    var(--color-surface);
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.notificationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notificationEyebrow {
+  margin: 0;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.notificationTitle {
+  margin: 6px 0 0;
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.notificationList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.notificationCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-surface) 94%, white 6%);
+}
+
+.notificationCard[data-unread='true'] {
+  border-color: rgba(20, 184, 166, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.08);
+}
+
+.notificationCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notificationCardTitle,
+.notificationCardTime,
+.notificationMessage,
+.leaveApprovalMeta,
+.leaveApprovalDetails,
+.notificationEmpty {
+  margin: 0;
+}
+
+.notificationCardTitle {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.notificationCardTime {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.notificationLink {
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.notificationMessage {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.leaveApprovalCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent),
+    color-mix(in srgb, var(--color-surface) 92%, white 8%);
+}
+
+.leaveApprovalMeta {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.leaveApprovalDetails {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.leaveApprovalActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.notificationApproveButton,
+.notificationRejectButton {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.notificationApproveButton {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: white;
+}
+
+.notificationRejectButton {
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+.notificationApproveButton:hover,
+.notificationRejectButton:hover {
+  transform: translateY(-1px);
+}
+
+.notificationApproveButton:disabled,
+.notificationRejectButton:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+}
+
+.notificationEmpty {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .circleButton:hover {
@@ -164,6 +373,15 @@
 :global([data-theme='dark']) .profileAvatar {
   color: #5eead4;
   background: rgba(20, 184, 166, 0.16);
+}
+
+:global([data-theme='dark']) .notificationPanel {
+  box-shadow: 0 24px 50px rgba(2, 6, 23, 0.35);
+}
+
+:global([data-theme='dark']) .notificationCard,
+:global([data-theme='dark']) .leaveApprovalCard {
+  background: color-mix(in srgb, var(--color-surface) 88%, #0f172a 12%);
 }
 
 .profileText {
@@ -267,6 +485,7 @@
 
 .contentArea {
   display: flex;
+  flex-direction: column;
   flex: 1;
   height: 100%;
   min-height: 0;
@@ -274,6 +493,12 @@
   padding: 10px 10px 10px 10px;
   background: var(--color-bg);
   overflow: hidden;
+}
+
+.pageActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 10px;
 }
 
 .content {
@@ -313,6 +538,11 @@
   .contentArea {
     padding: 16px;
   }
+
+  .notificationPanel {
+    left: 0;
+    right: auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -326,5 +556,19 @@
 
   .contentArea {
     padding: 12px;
+  }
+
+  .pageActions {
+    padding-bottom: 12px;
+  }
+
+  .notificationPanel {
+    width: min(360px, calc(100vw - 32px));
+  }
+
+  .notificationCardHeader,
+  .leaveApprovalActions {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

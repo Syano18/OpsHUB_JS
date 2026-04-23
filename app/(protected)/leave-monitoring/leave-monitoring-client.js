@@ -4,6 +4,8 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FiActivity,
+  FiBell,
+  FiCheck,
   FiChevronLeft,
   FiChevronRight,
   FiClock,
@@ -64,6 +66,16 @@ const leaveTypeOptions = [
   { value: 'use_leave', label: 'USE Leave' },
   { value: 'wellness', label: 'Wellness Leave' },
 ];
+
+const CSC_FORM_SUPPORTED_LEAVE_TYPES = new Set([
+  'vacation',
+  'sick',
+  'forced',
+  'social',
+  'wellness',
+]);
+
+const LEAVE_APPROVER_ROLES = new Set(['admin', 'super_admin']);
 
 const DEFAULT_FORM_DATA = {
   leaveType: '',
@@ -252,6 +264,117 @@ function requiresIllnessDetails(leaveType) {
   return leaveType === 'sick';
 }
 
+function normalizeRole(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function isLeaveApprover(role) {
+  return LEAVE_APPROVER_ROLES.has(normalizeRole(role));
+}
+
+function formatNotificationTimestamp(value) {
+  if (!value) {
+    return '';
+  }
+
+  const normalizedValue = String(value).replace(' ', 'T');
+  const parsedDate = new Date(normalizedValue);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsedDate);
+}
+
+function formatLeaveTypeLabel(value) {
+  const normalizedValue = String(value ?? '').trim();
+
+  if (!normalizedValue) {
+    return 'Leave';
+  }
+
+  return normalizedValue
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatLeaveRange(firstDate, lastDate) {
+  if (!firstDate && !lastDate) {
+    return 'Dates unavailable';
+  }
+
+  const formatDate = (value) => {
+    const parsedDate = new Date(`${value}T00:00:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(parsedDate);
+  };
+
+  if (firstDate && lastDate && firstDate !== lastDate) {
+    return `${formatDate(firstDate)} to ${formatDate(lastDate)}`;
+  }
+
+  return formatDate(firstDate || lastDate);
+}
+
+function getNotificationStatusMeta(notificationType) {
+  switch (String(notificationType ?? '').trim().toLowerCase()) {
+    case 'leave_approved':
+      return { label: 'Approved', tone: 'approved' };
+    case 'leave_rejected':
+      return { label: 'Declined', tone: 'declined' };
+    case 'leave_request':
+      return { label: 'Pending', tone: 'pending' };
+    default:
+      return null;
+  }
+}
+
+async function downloadCscForm(requestGroupId) {
+  const response = await fetch(
+    `/api/leaves/${encodeURIComponent(requestGroupId)}/csc-form`,
+    {
+      method: 'GET',
+      cache: 'no-store',
+    }
+  );
+
+  if (!response.ok) {
+    const errorPayload = await response
+      .json()
+      .catch(() => ({ error: 'Unable to download the CSC Form 6.' }));
+
+    throw new Error(errorPayload.error || 'Unable to download the CSC Form 6.');
+  }
+
+  const blob = await response.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const downloadLink = document.createElement('a');
+  const contentDisposition = response.headers.get('content-disposition') || '';
+  const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+
+  downloadLink.href = objectUrl;
+  downloadLink.download = fileNameMatch?.[1] || 'csc-form-6.pdf';
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 function buildSubmittedReason({
   leaveType,
   locationScope,
@@ -347,12 +470,24 @@ function LeaveCard({ leave }) {
   );
 }
 
-export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
+export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUser }) {
   const router = useRouter();
   const dialogRef = useRef(null);
+  const rejectDialogRef = useRef(null);
+  const notificationRef = useRef(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isNotificationLoading, setIsNotificationLoading] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [pendingLeaveRequests, setPendingLeaveRequests] = useState([]);
+  const [activeLeaveActionId, setActiveLeaveActionId] = useState('');
+  const [rejectModalState, setRejectModalState] = useState({
+    isOpen: false,
+    groupId: '',
+    notificationId: null,
+    reason: '',
+  });
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
-  const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
@@ -361,10 +496,30 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
     () => initialLeaveSummaries.map(buildLeaveSummary).filter(Boolean),
     [initialLeaveSummaries]
   );
+  const canApproveLeaveRequests = isLeaveApprover(currentUser?.role);
+  const pendingLeaveRequestsByGroupId = useMemo(
+    () =>
+      new Map(
+        pendingLeaveRequests
+          .map((request) => [String(request?.requestGroupId ?? '').trim(), request])
+          .filter(([requestGroupId]) => requestGroupId)
+      ),
+    [pendingLeaveRequests]
+  );
+  const visibleNotifications = useMemo(
+    () => notifications.filter((notification) => !notification.isRead),
+    [notifications]
+  );
+  const unreadNotificationCount = visibleNotifications.filter(
+    (notification) => !notification.isRead
+  ).length;
   const balanceOnlyLeaveTypes = leaveSummaries.filter((leave) => leave.metrics.length === 2);
   const requestedDays = formData.leaveDates.length;
   const selectedLeaveSummary =
     leaveSummaries.find((leave) => leave.key === formData.leaveType) ?? null;
+  const selectedLeaveBalance = Number(
+    selectedLeaveSummary?.metrics.find((metric) => metric.label === 'Balance')?.value ?? 0
+  );
   const showLocationFields = requiresLocationDetails(formData.leaveType);
   const showIllnessFields = requiresIllnessDetails(formData.leaveType);
   const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
@@ -387,6 +542,107 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
     };
   }, [isDialogOpen, isSubmitting]);
 
+  useEffect(() => {
+    if (!rejectModalState.isOpen) {
+      return undefined;
+    }
+
+    function handleEscape(event) {
+      if (
+        event.key === 'Escape' &&
+        activeLeaveActionId !== rejectModalState.groupId
+      ) {
+        setRejectModalState({
+          isOpen: false,
+          groupId: '',
+          notificationId: null,
+          reason: '',
+        });
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [activeLeaveActionId, rejectModalState.groupId, rejectModalState.isOpen]);
+
+  useEffect(() => {
+    if (!isNotificationOpen) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      if (!notificationRef.current?.contains(event.target)) {
+        setIsNotificationOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isNotificationOpen]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadNotificationData = async () => {
+      if (!currentUser?.email) {
+        return;
+      }
+
+      try {
+        setIsNotificationLoading(true);
+
+        const [notificationsResponse, pendingResponse] = await Promise.all([
+          fetch('/api/notifications?limit=20', { cache: 'no-store' }),
+          canApproveLeaveRequests
+            ? fetch('/api/leaves/pending', { cache: 'no-store' })
+            : Promise.resolve(null),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const notificationsPayload = notificationsResponse?.ok
+          ? await notificationsResponse.json()
+          : { notifications: [] };
+        const pendingPayload =
+          pendingResponse && pendingResponse.ok
+            ? await pendingResponse.json()
+            : { requests: [] };
+
+        setNotifications(
+          Array.isArray(notificationsPayload?.notifications)
+            ? notificationsPayload.notifications
+            : []
+        );
+        setPendingLeaveRequests(
+          Array.isArray(pendingPayload?.requests) ? pendingPayload.requests : []
+        );
+      } catch {
+        if (isActive) {
+          setNotifications([]);
+          setPendingLeaveRequests([]);
+        }
+      } finally {
+        if (isActive) {
+          setIsNotificationLoading(false);
+        }
+      }
+    };
+
+    loadNotificationData();
+    const intervalId = setInterval(loadNotificationData, 30000);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [canApproveLeaveRequests, currentUser?.email]);
+
   const dismissToast = (toastId) => {
     setToasts((currentToasts) =>
       currentToasts.filter((toast) => toast.id !== toastId)
@@ -405,6 +661,142 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
     ]);
   };
 
+  const reloadNotificationData = async () => {
+    try {
+      const [notificationsResponse, pendingResponse] = await Promise.all([
+        fetch('/api/notifications?limit=20', { cache: 'no-store' }),
+        canApproveLeaveRequests
+          ? fetch('/api/leaves/pending', { cache: 'no-store' })
+          : Promise.resolve(null),
+      ]);
+
+      const notificationsPayload = notificationsResponse?.ok
+        ? await notificationsResponse.json()
+        : { notifications: [] };
+      const pendingPayload =
+        pendingResponse && pendingResponse.ok
+          ? await pendingResponse.json()
+          : { requests: [] };
+
+      setNotifications(
+        Array.isArray(notificationsPayload?.notifications)
+          ? notificationsPayload.notifications
+          : []
+      );
+      setPendingLeaveRequests(
+        Array.isArray(pendingPayload?.requests) ? pendingPayload.requests : []
+      );
+    } catch {
+      // Keep the current bell state if refresh fails.
+    }
+  };
+
+  const markNotificationRead = async (notificationId) => {
+    if (!notificationId) {
+      return;
+    }
+
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: notificationId }),
+      });
+
+      setNotifications((currentNotifications) =>
+        currentNotifications.filter((notification) => notification.id !== notificationId)
+      );
+    } catch {
+      // Ignore notification read failures for now.
+    }
+  };
+
+  const closeRejectModal = () => {
+    if (activeLeaveActionId === rejectModalState.groupId) {
+      return;
+    }
+
+    setRejectModalState({
+      isOpen: false,
+      groupId: '',
+      notificationId: null,
+      reason: '',
+    });
+  };
+
+  const openRejectModal = (groupId, notificationId) => {
+    setRejectModalState({
+      isOpen: true,
+      groupId,
+      notificationId,
+      reason: '',
+    });
+  };
+
+  const handleLeaveDecision = async (groupId, decision, notificationId, hrRemarks = '') => {
+    if (!groupId) {
+      return;
+    }
+
+    setActiveLeaveActionId(groupId);
+
+    try {
+      const response = await fetch(`/api/leaves/${encodeURIComponent(groupId)}/${decision}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ hrRemarks }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to update the leave request right now.');
+      }
+
+      if (decision === 'reject') {
+        closeRejectModal();
+      }
+
+      if (notificationId) {
+        await markNotificationRead(notificationId);
+      }
+
+      await reloadNotificationData();
+      startTransition(() => {
+        router.refresh();
+      });
+      showToast('success', payload?.message || `Leave request ${decision} successfully.`);
+    } catch (error) {
+      const message = error.message || 'Unable to update the leave request right now.';
+
+      showToast('error', message);
+    } finally {
+      setActiveLeaveActionId('');
+    }
+  };
+
+  const submitRejectDecision = async (event) => {
+    event.preventDefault();
+
+    const normalizedReason = rejectModalState.reason.trim();
+
+    if (!normalizedReason) {
+      showToast('error', 'A reason is required when declining a leave request.');
+      return;
+    }
+
+    await handleLeaveDecision(
+      rejectModalState.groupId,
+      'reject',
+      rejectModalState.notificationId,
+      normalizedReason
+    );
+  };
+
   const closeDialog = () => {
     if (isSubmitting) {
       return;
@@ -412,7 +804,6 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
 
     setIsDialogOpen(false);
     setFormData(DEFAULT_FORM_DATA);
-    setFormError('');
     setCalendarMonth(startOfMonth(new Date()));
   };
 
@@ -431,7 +822,6 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
         leaveDates: nextLeaveDates,
       };
     });
-    setFormError('');
   };
 
   const removeLeaveDate = (dateValue) => {
@@ -439,7 +829,6 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
       ...current,
       leaveDates: current.leaveDates.filter((leaveDate) => leaveDate !== dateValue),
     }));
-    setFormError('');
   };
 
   const handleLeaveTypeChange = (event) => {
@@ -453,38 +842,48 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
       sickLeaveMode: '',
       illnessDetails: '',
     }));
-    setFormError('');
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!formData.leaveType || !formData.leaveDates.length) {
-      setFormError('Leave type and leave dates are required.');
+      showToast('error', 'Leave type and leave dates are required.');
       return;
     }
 
     if (showLocationFields && (!formData.locationScope || !formData.locationDetails.trim())) {
-      setFormError(
+      showToast(
+        'error',
         'For Vacation and Social leave, choose Within the Philippines or Abroad and specify the place.'
       );
       return;
     }
 
     if (showIllnessFields && (!formData.sickLeaveMode || !formData.illnessDetails.trim())) {
-      setFormError(
+      showToast(
+        'error',
         'For Sick Leave, choose In Hospital or Out Patient and specify the illness.'
       );
       return;
     }
 
     if (formData.leaveDates.some(isWeekendDate)) {
-      setFormError('Weekend dates cannot be submitted as leave dates.');
+      showToast('error', 'Weekend dates cannot be submitted as leave dates.');
+      return;
+    }
+
+    if (selectedLeaveSummary && requestedDays > selectedLeaveBalance) {
+      showToast(
+        'error',
+        `Requested leave exceeds the available balance of ${formatLeaveValue(
+          selectedLeaveBalance
+        )}.`
+      );
       return;
     }
 
     setIsSubmitting(true);
-    setFormError('');
 
     try {
       const response = await fetch('/api/leaves', {
@@ -508,12 +907,27 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
       setIsDialogOpen(false);
       setFormData(DEFAULT_FORM_DATA);
       showToast('success', payload?.message || 'Leave request submitted for HR review.');
+
+      if (
+        payload?.requestGroupId &&
+        CSC_FORM_SUPPORTED_LEAVE_TYPES.has(formData.leaveType)
+      ) {
+        try {
+          await downloadCscForm(payload.requestGroupId);
+          showToast('success', 'CSC Form 6 downloaded successfully.');
+        } catch (error) {
+          showToast(
+            'error',
+            error.message || 'Leave submitted, but the CSC Form 6 PDF could not be downloaded.'
+          );
+        }
+      }
+
       startTransition(() => {
         router.refresh();
       });
     } catch (error) {
       const message = error.message || 'Unable to submit the leave request right now.';
-      setFormError(message);
       showToast('error', message);
     } finally {
       setIsSubmitting(false);
@@ -540,6 +954,156 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
                 <FiPlus aria-hidden="true" />
                 <span>File Leave</span>
               </button>
+
+              <div className={styles.notificationShell} ref={notificationRef}>
+                <button
+                  type="button"
+                  className={styles.notificationButton}
+                  onClick={() => setIsNotificationOpen((current) => !current)}
+                  aria-label="Open notifications"
+                  title="Open notifications"
+                >
+                  <FiBell />
+                  {unreadNotificationCount ? (
+                    <span className={styles.notificationBadge}>
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </span>
+                  ) : null}
+                </button>
+
+                {isNotificationOpen ? (
+                  <div className={styles.notificationPanel}>
+                    <div className={styles.notificationHeader}>
+                      <div>
+                        <p className={styles.notificationEyebrow}>Notifications</p>
+                        <h3 className={styles.notificationTitle}>Leave Updates</h3>
+                      </div>
+                    </div>
+
+                    <div className={styles.notificationList}>
+                      {isNotificationLoading ? (
+                        <p className={styles.notificationEmpty}>Loading notifications...</p>
+                      ) : visibleNotifications.length ? (
+                        visibleNotifications.map((notification) => {
+                          const relatedRequest = pendingLeaveRequestsByGroupId.get(
+                            String(notification.relatedEntityId ?? '').trim()
+                          );
+                          const showApprovalActions =
+                            canApproveLeaveRequests &&
+                            notification.type === 'leave_request' &&
+                            relatedRequest;
+                          const notificationStatus = getNotificationStatusMeta(notification.type);
+                          const canMarkNotificationRead =
+                            !notification.isRead && notification.type !== 'leave_request';
+
+                          return (
+                            <article
+                              key={
+                                notification.id ??
+                                `${notification.relatedEntityId}-${notification.createdAt}`
+                              }
+                              className={styles.notificationCard}
+                              data-unread={notification.isRead ? 'false' : 'true'}
+                            >
+                              <div className={styles.notificationCardHeader}>
+                                <div>
+                                  <div className={styles.notificationTitleRow}>
+                                    <p className={styles.notificationCardTitle}>
+                                      {notification.title}
+                                    </p>
+                                    {notificationStatus ? (
+                                      <span
+                                        className={styles.notificationStatus}
+                                        data-tone={notificationStatus.tone}
+                                      >
+                                        {notificationStatus.label}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className={styles.notificationCardTime}>
+                                    {formatNotificationTimestamp(notification.createdAt)}
+                                  </p>
+                                </div>
+                                {canMarkNotificationRead ? (
+                                  <button
+                                    type="button"
+                                    className={styles.notificationLink}
+                                    onClick={() => markNotificationRead(notification.id)}
+                                  >
+                                    Mark read
+                                  </button>
+                                ) : null}
+                              </div>
+
+                              <p className={styles.notificationMessage}>
+                                {notification.message}
+                              </p>
+
+                              {showApprovalActions ? (
+                                <div className={styles.leaveApprovalCard}>
+                                  <p className={styles.leaveApprovalMeta}>
+                                    {relatedRequest.employeeName || relatedRequest.employeeEmail}
+                                  </p>
+                                  <p className={styles.leaveApprovalDetails}>
+                                    {formatLeaveTypeLabel(relatedRequest.leaveType)} -{' '}
+                                    {formatLeaveRange(
+                                      relatedRequest.firstDate,
+                                      relatedRequest.lastDate
+                                    )}{' '}
+                                    - {relatedRequest.requestedDays}
+                                  </p>
+
+                                  <div className={styles.leaveApprovalActions}>
+                                    <button
+                                      type="button"
+                                      className={styles.notificationApproveButton}
+                                      onClick={() =>
+                                        handleLeaveDecision(
+                                          relatedRequest.requestGroupId,
+                                          'approve',
+                                          notification.id
+                                        )
+                                      }
+                                      disabled={
+                                        activeLeaveActionId === relatedRequest.requestGroupId
+                                      }
+                                    >
+                                      <FiCheck />
+                                      <span>
+                                        {activeLeaveActionId === relatedRequest.requestGroupId
+                                          ? 'Working...'
+                                          : 'Approve'}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={styles.notificationRejectButton}
+                                      onClick={() =>
+                                        openRejectModal(
+                                          relatedRequest.requestGroupId,
+                                          notification.id
+                                        )
+                                      }
+                                      disabled={
+                                        activeLeaveActionId === relatedRequest.requestGroupId
+                                      }
+                                    >
+                                      <FiX />
+                                      <span>Reject</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })
+                      ) : (
+                        <p className={styles.notificationEmpty}>No notifications yet.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -564,7 +1128,7 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
       </section>
 
       {isDialogOpen ? (
-        <div className={styles.dialogBackdrop} onMouseDown={closeDialog}>
+        <div className={styles.dialogBackdrop}>
           <div
             ref={dialogRef}
             className={styles.dialog}
@@ -819,8 +1383,6 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
                   </div>
                 ) : null}
 
-                {formError ? <p className={styles.formError}>{formError}</p> : null}
-
                 <div className={styles.dialogActions}>
                   <button
                     type="button"
@@ -836,6 +1398,80 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries }) {
                     disabled={isSubmitting}
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Leave'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rejectModalState.isOpen ? (
+        <div className={styles.dialogBackdrop} onMouseDown={closeRejectModal}>
+          <div
+            ref={rejectDialogRef}
+            className={`${styles.dialog} ${styles.rejectDialog}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Decline leave request"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={styles.dialogHeader}>
+              <div>
+                <p className={styles.dialogEyebrow}>Leave Decision</p>
+                <h2 className={styles.dialogTitle}>Decline Leave Request</h2>
+                <p className={styles.dialogText}>
+                  Enter the reason for declining this leave request. This will be sent to the employee.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={styles.dialogClose}
+                onClick={closeRejectModal}
+                aria-label="Close decline leave dialog"
+                disabled={activeLeaveActionId === rejectModalState.groupId}
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className={styles.dialogBody}>
+              <form className={styles.form} onSubmit={submitRejectDecision}>
+                <label className={styles.fieldGroup}>
+                  <FieldLabel required>Reason for Declining</FieldLabel>
+                  <textarea
+                    className={styles.textArea}
+                    rows={5}
+                    value={rejectModalState.reason}
+                    onChange={(event) =>
+                      setRejectModalState((current) => ({
+                        ...current,
+                        reason: event.target.value,
+                        error: '',
+                      }))
+                    }
+                    placeholder="Explain why this leave request is being declined."
+                    required
+                  />
+                </label>
+
+                <div className={styles.dialogActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={closeRejectModal}
+                    disabled={activeLeaveActionId === rejectModalState.groupId}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={styles.notificationRejectButton}
+                    disabled={activeLeaveActionId === rejectModalState.groupId}
+                  >
+                    {activeLeaveActionId === rejectModalState.groupId
+                      ? 'Declining...'
+                      : 'Decline Leave'}
                   </button>
                 </div>
               </form>

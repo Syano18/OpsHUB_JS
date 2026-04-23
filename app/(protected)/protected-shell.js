@@ -59,19 +59,17 @@ export default function ProtectedShell({ children, user }) {
   const userInitials = getUserInitials(user?.name, user?.email);
 
   useEffect(() => {
-    // Load theme preference from localStorage first, then fallback to DOM attribute
-    const savedTheme = typeof localStorage !== 'undefined' 
-      ? localStorage.getItem('theme-preference')
-      : null;
-    const currentTheme = savedTheme || 
-      document.documentElement.getAttribute('data-theme') || 
-      'light';
+    const savedTheme =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem('theme-preference')
+        : null;
+    const currentTheme =
+      savedTheme || document.documentElement.getAttribute('data-theme') || 'light';
     setIsDarkMode(currentTheme === 'dark');
     document.documentElement.setAttribute('data-theme', currentTheme);
   }, []);
 
   useEffect(() => {
-    // Warm route data for faster transitions between protected pages.
     navLinks.forEach((link) => {
       router.prefetch(link.href);
     });
@@ -86,7 +84,7 @@ export default function ProtectedShell({ children, user }) {
         const res = await fetch('/api/status/version');
         if (!res.ok) return;
         const data = await res.json();
-        
+
         if (!isActive) return;
 
         if (lastVersion === null) {
@@ -95,12 +93,11 @@ export default function ProtectedShell({ children, user }) {
           lastVersion = data.version;
           router.refresh();
         }
-      } catch (err) {
-        // Ignore network errors so we don't spam the console
+      } catch {
+        // Ignore network errors so we do not spam the console.
       }
     };
 
-    // Check version every 10 seconds
     const interval = setInterval(checkVersion, 10000);
     checkVersion();
 
@@ -166,7 +163,7 @@ export default function ProtectedShell({ children, user }) {
     const themeValue = nextDarkMode ? 'dark' : 'light';
     setIsDarkMode(nextDarkMode);
     document.documentElement.setAttribute('data-theme', themeValue);
-    // Persist theme preference to localStorage
+
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('theme-preference', themeValue);
     }
