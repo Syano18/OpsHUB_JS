@@ -1374,7 +1374,7 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
 
                 {selectedLeaveSummary ? (
                   <div className={styles.previewCard}>
-                    <p className={styles.previewLabel}>Current Balance</p>
+                    <p className={styles.previewLabel}>Available Balance</p>
                     <strong className={styles.previewValue}>
                       {selectedLeaveSummary.name}: {formatLeaveValue(
                         selectedLeaveSummary.metrics.find((metric) => metric.label === 'Balance')?.value
