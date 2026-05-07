@@ -257,7 +257,7 @@ function buildLeaveSummary(leave) {
 }
 
 function requiresLocationDetails(leaveType) {
-  return leaveType === 'vacation' || leaveType === 'social';
+  return leaveType === 'vacation' || leaveType === 'social' || leaveType === 'use_leave';
 }
 
 function requiresIllnessDetails(leaveType) {
@@ -362,17 +362,73 @@ async function downloadCscForm(requestGroupId) {
   }
 
   const blob = await response.blob();
-  const objectUrl = window.URL.createObjectURL(blob);
-  const downloadLink = document.createElement('a');
   const contentDisposition = response.headers.get('content-disposition') || '';
   const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  const fileName = fileNameMatch?.[1] || 'csc-form-6.pdf';
 
-  downloadLink.href = objectUrl;
-  downloadLink.download = fileNameMatch?.[1] || 'csc-form-6.pdf';
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  window.URL.revokeObjectURL(objectUrl);
+  // In Electron: open with system default PDF viewer
+  if (typeof window.electronPdf?.openWithSystem === 'function') {
+    try {
+      const pdfBytes = await blob.arrayBuffer();
+      await window.electronPdf.openWithSystem(
+        new Uint8Array(pdfBytes),
+        fileName
+      );
+      return;
+    } catch (error) {
+      console.error('Failed to open PDF with system viewer:', error);
+      // Fall back to browser viewer on error
+    }
+  }
+
+  // Fallback: open in browser (web mode or Electron fallback)
+  const objectUrl = window.URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank');
+  setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 2000);
+}
+
+async function downloadUseLeaveForm(requestGroupId) {
+  const response = await fetch(
+    `/api/leaves/${encodeURIComponent(requestGroupId)}/use-form`,
+    {
+      method: 'GET',
+      cache: 'no-store',
+    }
+  );
+
+  if (!response.ok) {
+    const errorPayload = await response
+      .json()
+      .catch(() => ({ error: 'Unable to download the USE Leave form.' }));
+
+    throw new Error(errorPayload.error || 'Unable to download the USE Leave form.');
+  }
+
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get('content-disposition') || '';
+  const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  const fileName = fileNameMatch?.[1] || 'use-leave.pdf';
+
+  if (typeof window.electronPdf?.openWithSystem === 'function') {
+    try {
+      const pdfBytes = await blob.arrayBuffer();
+      await window.electronPdf.openWithSystem(
+        new Uint8Array(pdfBytes),
+        fileName
+      );
+      return;
+    } catch (error) {
+      console.error('Failed to open PDF with system viewer:', error);
+    }
+  }
+
+  const objectUrl = window.URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank');
+  setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 2000);
 }
 
 function buildSubmittedReason({
@@ -387,11 +443,16 @@ function buildSubmittedReason({
   const detailSections = [];
 
   if (requiresLocationDetails(leaveType)) {
-    const locationLabel =
-      locationScope === 'within_philippines' ? 'Within the Philippines' : 'Abroad';
+    if (leaveType === 'use_leave') {
+      const place = locationDetails.trim();
+      return normalizedReason ? `${place}\n${normalizedReason}` : place;
+    } else {
+      const locationLabel =
+        locationScope === 'within_philippines' ? 'Within the Philippines' : 'Abroad';
 
-    detailSections.push(`Location: ${locationLabel}`);
-    detailSections.push(`Specified Place: ${locationDetails.trim()}`);
+      detailSections.push(`Location: ${locationLabel}`);
+      detailSections.push(`Specified Place: ${locationDetails.trim()}`);
+    }
   }
 
   if (requiresIllnessDetails(leaveType)) {
@@ -583,6 +644,15 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
       document.removeEventListener('mousedown', handlePointerDown);
     };
   }, [isNotificationOpen]);
+
+  useEffect(() => {
+    fetch('/api/status/warmup', {
+      method: 'GET',
+      cache: 'no-store',
+    }).catch(() => {
+      // Warmup failures should not block the page.
+    });
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -852,12 +922,19 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
       return;
     }
 
-    if (showLocationFields && (!formData.locationScope || !formData.locationDetails.trim())) {
-      showToast(
-        'error',
-        'For Vacation and Social leave, choose Within the Philippines or Abroad and specify the place.'
-      );
-      return;
+    if (showLocationFields) {
+      if (formData.leaveType === 'use_leave') {
+        if (!formData.locationDetails.trim()) {
+          showToast('error', 'Please specify where the day-off will be spent.');
+          return;
+        }
+      } else if (!formData.locationScope || !formData.locationDetails.trim()) {
+        showToast(
+          'error',
+          'For Vacation and Social leave, choose Within the Philippines or Abroad and specify the place.'
+        );
+        return;
+      }
     }
 
     if (showIllnessFields && (!formData.sickLeaveMode || !formData.illnessDetails.trim())) {
@@ -908,18 +985,27 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
       setFormData(DEFAULT_FORM_DATA);
       showToast('success', payload?.message || 'Leave request submitted for HR review.');
 
-      if (
-        payload?.requestGroupId &&
-        CSC_FORM_SUPPORTED_LEAVE_TYPES.has(formData.leaveType)
-      ) {
-        try {
-          await downloadCscForm(payload.requestGroupId);
-          showToast('success', 'CSC Form 6 downloaded successfully.');
-        } catch (error) {
-          showToast(
-            'error',
-            error.message || 'Leave submitted, but the CSC Form 6 PDF could not be downloaded.'
-          );
+      if (payload?.requestGroupId) {
+        if (formData.leaveType === 'use_leave') {
+          try {
+            await downloadUseLeaveForm(payload.requestGroupId);
+            showToast('success', 'USE Leave form downloaded successfully.');
+          } catch (error) {
+            showToast(
+              'error',
+              error.message || 'Leave submitted, but the USE Leave PDF could not be downloaded.'
+            );
+          }
+        } else if (CSC_FORM_SUPPORTED_LEAVE_TYPES.has(formData.leaveType)) {
+          try {
+            await downloadCscForm(payload.requestGroupId);
+            showToast('success', 'CSC Form 6 downloaded successfully.');
+          } catch (error) {
+            showToast(
+              'error',
+              error.message || 'Leave submitted, but the CSC Form 6 PDF could not be downloaded.'
+            );
+          }
         }
       }
 
@@ -1184,27 +1270,33 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
 
                   {showLocationFields ? (
                     <>
-                      <label className={styles.fieldGroup}>
-                        <FieldLabel required>Location</FieldLabel>
-                        <select
-                          className={styles.selectInput}
-                          value={formData.locationScope}
-                          onChange={(event) =>
-                            setFormData((current) => ({
-                              ...current,
-                              locationScope: event.target.value,
-                            }))
-                          }
-                          required
-                        >
-                          <option value="">Select location</option>
-                          <option value="within_philippines">Within the Philippines</option>
-                          <option value="abroad">Abroad</option>
-                        </select>
-                      </label>
+                      {formData.leaveType !== 'use_leave' && (
+                        <label className={styles.fieldGroup}>
+                          <FieldLabel required>Location</FieldLabel>
+                          <select
+                            className={styles.selectInput}
+                            value={formData.locationScope}
+                            onChange={(event) =>
+                              setFormData((current) => ({
+                                ...current,
+                                locationScope: event.target.value,
+                              }))
+                            }
+                            required
+                          >
+                            <option value="">Select location</option>
+                            <option value="within_philippines">Within the Philippines</option>
+                            <option value="abroad">Abroad</option>
+                          </select>
+                        </label>
+                      )}
 
                       <label className={styles.fieldGroup}>
-                        <FieldLabel required>Please Specify</FieldLabel>
+                        <FieldLabel required>
+                          {formData.leaveType === 'use_leave'
+                            ? 'Where Day-off will be spent'
+                            : 'Please Specify'}
+                        </FieldLabel>
                         <input
                           type="text"
                           className={styles.textInput}
@@ -1215,7 +1307,11 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
                               locationDetails: event.target.value,
                             }))
                           }
-                          placeholder="Enter the place or destination"
+                          placeholder={
+                            formData.leaveType === 'use_leave'
+                              ? 'Enter where you will spend your day-off'
+                              : 'Enter the place or destination'
+                          }
                           required
                         />
                       </label>
@@ -1407,7 +1503,7 @@ export default function LeaveMonitoringClient({ initialLeaveSummaries, currentUs
       ) : null}
 
       {rejectModalState.isOpen ? (
-        <div className={styles.dialogBackdrop} onMouseDown={closeRejectModal}>
+        <div className={styles.dialogBackdrop}>
           <div
             ref={rejectDialogRef}
             className={`${styles.dialog} ${styles.rejectDialog}`}

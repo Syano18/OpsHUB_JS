@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { verifySession } from '@/lib/auth-session';
 import { getUserPermissionByEmail } from '@/lib/user-permissions';
 import { getLeaveRequestGroup } from '@/lib/leaves';
-import { CSC_FORM_MOCK_GROUP_ID } from '@/lib/csc-form-6-data';
 import { generateCscForm6Pdf } from '@/lib/csc-leave-form';
 
 export const dynamic = 'force-dynamic';
 const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
+const PDF_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const pdfCacheByGroupId = new Map();
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -14,6 +15,34 @@ function normalizeText(value) {
 
 function normalizeRole(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function getCachedPdf(groupId) {
+  const cached = pdfCacheByGroupId.get(groupId);
+  if (!cached) {
+    return null;
+  }
+
+  const elapsedMs = Date.now() - cached.cachedAt;
+  if (elapsedMs > PDF_CACHE_TTL_MS) {
+    pdfCacheByGroupId.delete(groupId);
+    if (IS_DEVELOPMENT) {
+      console.info(`[CSC Form 6 PDF] cache expired for group=${groupId} after ${elapsedMs}ms`);
+    }
+    return null;
+  }
+
+  if (IS_DEVELOPMENT) {
+    console.info(`[CSC Form 6 PDF] cache hit for group=${groupId}, age=${elapsedMs}ms`);
+  }
+  return cached;
+}
+
+function setCachedPdf(groupId, document) {
+  pdfCacheByGroupId.set(groupId, {
+    ...document,
+    cachedAt: Date.now(),
+  });
 }
 
 export async function GET(_request, context) {
@@ -26,7 +55,6 @@ export async function GET(_request, context) {
 
     const params = await context.params;
     const groupId = normalizeText(params?.groupId);
-    const isMockGroup = IS_DEVELOPMENT && groupId === CSC_FORM_MOCK_GROUP_ID;
 
     if (!groupId) {
       return NextResponse.json(
@@ -37,16 +65,15 @@ export async function GET(_request, context) {
 
     const [currentUser, leaveRequestGroup] = await Promise.all([
       getUserPermissionByEmail(session.email),
-      isMockGroup ? Promise.resolve(null) : getLeaveRequestGroup(groupId),
+      getLeaveRequestGroup(groupId),
     ]);
 
-    if (!isMockGroup && !leaveRequestGroup) {
+    if (!leaveRequestGroup) {
       return NextResponse.json({ error: 'Leave request group not found.' }, { status: 404 });
     }
 
     const currentRole = normalizeRole(currentUser?.role);
     const canAccess =
-      isMockGroup ||
       leaveRequestGroup.employeeEmail === normalizeText(session.email).toLowerCase() ||
       currentRole === 'admin' ||
       currentRole === 'super_admin';
@@ -58,22 +85,34 @@ export async function GET(_request, context) {
       );
     }
 
-    let employeeForForm = null;
-
-    if (!isMockGroup && leaveRequestGroup) {
-      const leaveEmployeeEmail = normalizeText(leaveRequestGroup.employeeEmail).toLowerCase();
-      const sessionEmail = normalizeText(session.email).toLowerCase();
-
-      employeeForForm =
-        leaveEmployeeEmail === sessionEmail
-          ? currentUser
-          : await getUserPermissionByEmail(leaveRequestGroup.employeeEmail);
+    // Check cache before generating
+    const cachedDocument = getCachedPdf(groupId);
+    if (cachedDocument) {
+      return new NextResponse(cachedDocument.bytes, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${cachedDocument.fileName}"`,
+          'Cache-Control': 'no-store',
+        },
+      });
     }
+
+    const leaveEmployeeEmail = normalizeText(leaveRequestGroup.employeeEmail).toLowerCase();
+    const sessionEmail = normalizeText(session.email).toLowerCase();
+
+    const employeeForForm =
+      leaveEmployeeEmail === sessionEmail
+        ? currentUser
+        : await getUserPermissionByEmail(leaveRequestGroup.employeeEmail);
 
     const document = await generateCscForm6Pdf(groupId, {
       leaveRequestGroup,
       employee: employeeForForm,
     });
+
+    // Cache the generated PDF
+    setCachedPdf(groupId, document);
 
     return new NextResponse(document.bytes, {
       status: 200,

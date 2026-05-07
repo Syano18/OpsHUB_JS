@@ -1,6 +1,6 @@
 {
   "name": "kalinga-opshub",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Desktop operations hub for Kalinga personnel, schedules, attendance, and logbook workflows.",
   "author": "PSA Kalinga ISA II",

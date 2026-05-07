@@ -3,7 +3,7 @@ import { verifySession } from '@/lib/auth-session';
 import { tursoClient } from '@/lib/turso';
 import { getUserPermissionByEmail } from '@/lib/user-permissions';
 
-export async function GET(request) {
+export async function GET() {
   try {
     const session = await verifySession();
     if (!session) {
@@ -95,6 +95,18 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Missing required payload' }, { status: 400 });
     }
 
+    const eventCheck = await tursoClient.execute({
+      sql: 'SELECT events FROM personal WHERE id = ? AND assigned_to = ? LIMIT 1',
+      args: [id, userDisplayName],
+    });
+
+    if (eventCheck.rows.length > 0 && eventCheck.rows[0].events?.endsWith(' (Approved)')) {
+      return NextResponse.json(
+        { error: 'Approved leave events cannot be edited.' },
+        { status: 403 }
+      );
+    }
+
     await tursoClient.execute({
       sql: 'UPDATE personal SET events = ?, date = ?, end_date = ? WHERE id = ? AND assigned_to = ?',
       args: [events, date, endDate || null, id, userDisplayName],
@@ -121,6 +133,18 @@ export async function DELETE(request) {
 
     if (!id) {
       return NextResponse.json({ error: 'Missing event id' }, { status: 400 });
+    }
+
+    const eventCheck = await tursoClient.execute({
+      sql: 'SELECT events FROM personal WHERE id = ? AND assigned_to = ? LIMIT 1',
+      args: [id, userDisplayName],
+    });
+
+    if (eventCheck.rows.length > 0 && eventCheck.rows[0].events?.endsWith(' (Approved)')) {
+      return NextResponse.json(
+        { error: 'Approved leave events cannot be deleted.' },
+        { status: 403 }
+      );
     }
 
     const scheduleBackedEvent = await tursoClient.execute({

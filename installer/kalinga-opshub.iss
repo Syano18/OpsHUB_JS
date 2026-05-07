@@ -1,5 +1,5 @@
 #define MyAppName "Kalinga OpsHub"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.4"
 #define MyAppPublisher "ISA II"
 #define LegacyAppName "Kalinga OpsHUB"
 
@@ -37,13 +37,16 @@ Type: filesandordirs; Name: "{autopf32}\Kalinga OpsHub"
 Name: "{group}\{#MyAppName}"; Filename: "{app}\Kalinga OpsHub.exe"; WorkingDir: "{app}"
 Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\Kalinga OpsHub.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{commonstartup}\Kalinga OpsHub Notifier"; Filename: "{app}\Notifier.exe"; WorkingDir: "{app}"
+Name: "{commonstartup}\Kalinga OpsHub Local Server"; Filename: "{app}\Kalinga OpsHub.exe"; Parameters: "--server-only"; WorkingDir: "{app}"
 
 [Run]
 Filename: "{app}\Kalinga OpsHub.exe"; Description: "Launch Kalinga OpsHub"; Flags: postinstall nowait skipifsilent
 Filename: "{app}\Notifier.exe"; Flags: nowait runhidden
+Filename: "{app}\Kalinga OpsHub.exe"; Parameters: "--server-only"; Flags: nowait runhidden
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /F /IM Notifier.exe"; Flags: runhidden; RunOnceId: "KillNotifier"
+Filename: "{cmd}"; Parameters: "/C powershell -NoProfile -ExecutionPolicy Bypass -Command ""Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'node.exe' -and $_.CommandLine -like '*resources\\.next\\standalone\\server.js*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"""; Flags: runhidden; RunOnceId: "KillLocalServer"
 
 [Code]
 function IsLegacyDisplayName(const DisplayName: string): Boolean;

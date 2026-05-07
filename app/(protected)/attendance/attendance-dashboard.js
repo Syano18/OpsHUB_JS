@@ -2,8 +2,6 @@
 
 import { useDeferredValue, useEffect, useId, useRef, useState } from 'react';
 import {
-  FiArrowRight,
-  FiCalendar,
   FiCheckCircle,
   FiChevronDown,
   FiMessageSquare,
@@ -393,28 +391,6 @@ export default function AttendanceDashboard({
     filteredRows[0] ??
     dashboardRows[0] ??
     null;
-
-  const visibleErrors = initialPunchErrors
-    .filter((error) =>
-      selectedDate
-        ? error.scanDate === selectedDate
-        : selectedMonth
-          ? error.scanDate?.startsWith(selectedMonth)
-          : true
-    )
-    .map((error) => {
-      const employeeRow = dashboardRows.find(
-        (row) => row.employeeId === error.employeeId && row.date === error.scanDate
-      );
-
-      return {
-        ...error,
-        fullName: employeeRow?.fullName ?? error.fullName ?? 'Unknown employee',
-        errorType: describeErrorType(error.errorMessage),
-        createdAtLabel: formatDateTimeLabel(error.createdAt),
-      };
-    })
-    .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
 
   const handleRowSelect = (recordId) => {
     setActiveRecordId(recordId);

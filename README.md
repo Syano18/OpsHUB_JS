@@ -112,7 +112,7 @@ After login, the protected shell exposes four core modules:
 
 ### 5.1 Schedules
 
-Use this module to create, edit, delete, filter, export, and import schedules.
+Use this module to create, edit, delete, filter, and export schedules.
 
 - Supports assignment to specific active users or `All employees`
 - Validates date ranges (`endDate >= startDate`)

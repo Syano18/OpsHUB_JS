@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [showAbout, setShowAbout] = useState(false);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isEnteringApp, setIsEnteringApp] = useState(false);
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateState, setUpdateState] = useState({
@@ -42,6 +43,8 @@ export default function LoginPage() {
   const toastTimeoutsRef = useRef(new Map());
   const updateUrl = process.env.NEXT_PUBLIC_UPDATE_URL?.trim() || '';
   const router = useRouter();
+  const isAuthInteractionLocked =
+    isRestoringSession || isEmailLoading || isGoogleLoading || isEnteringApp;
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -375,14 +378,25 @@ export default function LoginPage() {
   };
 
   const finishSignIn = async (firebaseUser) => {
-    const idToken = await firebaseUser.getIdToken();
-    await createServerSession(idToken);
-    router.push('/event');
-    router.refresh();
+    setIsEnteringApp(true);
+
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      await createServerSession(idToken);
+      router.push('/event');
+      router.refresh();
+    } catch (error) {
+      setIsEnteringApp(false);
+      throw error;
+    }
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (isAuthInteractionLocked) {
+      return;
+    }
 
     setIsEmailLoading(true);
 
@@ -405,6 +419,10 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (isAuthInteractionLocked) {
+      return;
+    }
+
     setIsGoogleLoading(true);
 
     try {
@@ -663,6 +681,7 @@ export default function LoginPage() {
                 placeholder=" "
                 required
                 value={email}
+                disabled={isAuthInteractionLocked}
                 onChange={(event) => {
                   setEmail(event.target.value);
                 }}
@@ -681,6 +700,7 @@ export default function LoginPage() {
                 placeholder=" "
                 required
                 value={password}
+                disabled={isAuthInteractionLocked}
                 onChange={(event) => {
                   setPassword(event.target.value);
                 }}
@@ -694,6 +714,7 @@ export default function LoginPage() {
                 type="button"
                 className={styles.passwordToggle}
                 onClick={() => setShowPassword((prev) => !prev)}
+                disabled={isAuthInteractionLocked}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 title={showPassword ? 'Hide password' : 'Show password'}
               >
@@ -711,6 +732,7 @@ export default function LoginPage() {
               type="button"
               className={styles.linkButton}
               onClick={openResetModal}
+              disabled={isAuthInteractionLocked}
             >
               Forgot password?
             </button>
@@ -719,10 +741,12 @@ export default function LoginPage() {
           <button
             type="submit"
             className={styles.primaryButton}
-            disabled={isEmailLoading || isGoogleLoading || isRestoringSession}
+            disabled={isAuthInteractionLocked}
           >
             {isRestoringSession
               ? 'Restoring session...'
+              : isEnteringApp
+                ? 'Opening workspace...'
               : isEmailLoading
                 ? 'Signing in...'
                 : 'Sign in'}
@@ -736,7 +760,7 @@ export default function LoginPage() {
             type="button"
             className={styles.googleButton}
             onClick={handleGoogleLogin}
-            disabled={isEmailLoading || isGoogleLoading || isRestoringSession}
+            disabled={isAuthInteractionLocked}
           >
             <span className={styles.googleIcon} aria-hidden="true">
               <FcGoogle className={styles.googleBrandIcon} />
@@ -744,6 +768,8 @@ export default function LoginPage() {
             <span>
               {isRestoringSession
                 ? 'Restoring session...'
+                : isEnteringApp
+                  ? 'Opening workspace...'
                 : isGoogleLoading
                   ? 'Signing in with Google...'
                   : 'Sign in with Google'}

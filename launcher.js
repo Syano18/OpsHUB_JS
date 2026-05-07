@@ -6,7 +6,6 @@
 
 const { spawn } = require('child_process');
 const { execSync } = require('child_process');
-const path = require('path');
 const http = require('http');
 
 const PORT = 3000;
@@ -61,7 +60,7 @@ function openBrowser() {
       execSync(`xdg-open ${BASE_URL}`, { stdio: 'ignore' });
     }
     console.log(`✓ Opened browser to ${BASE_URL}`);
-  } catch (err) {
+  } catch {
     console.warn(`Could not automatically open browser. Visit ${BASE_URL} manually.`);
   }
 }

@@ -37,6 +37,38 @@ function getTodayIsoDate() {
   ).padStart(2, '0')}`;
 }
 
+function extractDateNumber(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return 0;
+  const datePart = dateStr.split('T')[0].split(' ')[0];
+  const parts = datePart.split('-');
+  if (parts.length !== 3) return 0;
+  return parseInt(parts[0], 10) * 10000 + parseInt(parts[1], 10) * 100 + parseInt(parts[2], 10);
+}
+
+function isDateWithinEvent(dateValue, eventItem) {
+  const targetNum = extractDateNumber(dateValue);
+  const startNum = extractDateNumber(eventItem?.date);
+  const endNum = extractDateNumber(eventItem?.end_date || eventItem?.date);
+
+  if (!targetNum || !startNum || !endNum) {
+    return false;
+  }
+
+  return targetNum >= startNum && targetNum <= endNum;
+}
+
+function formatEventDateRange(eventItem) {
+  if (!eventItem?.date) {
+    return '';
+  }
+
+  if (!eventItem.end_date || eventItem.end_date === eventItem.date) {
+    return eventItem.date;
+  }
+
+  return `${eventItem.date} to ${eventItem.end_date}`;
+}
+
 export default function PersonalEventsCalendar() {
   const [activeMonth, setActiveMonth] = useState(() => {
     const now = new Date();
@@ -268,7 +300,7 @@ export default function PersonalEventsCalendar() {
         <div className={styles.calendarGrid} role="grid" aria-label={activeMonthLabel}>
           {calendarDays.map((day) => {
             const isToday = day.isoDate === todayIsoDate;
-            const startDayEvents = eventsData.filter(e => e.date === day.isoDate);
+            const dayEvents = eventsData.filter((eventItem) => isDateWithinEvent(day.isoDate, eventItem));
 
             return (
               <article
@@ -280,9 +312,9 @@ export default function PersonalEventsCalendar() {
                 aria-selected={isToday}
                 onClick={() => setSelectedDate(day)}
               >
-                {startDayEvents.length > 0 && (
+                {dayEvents.length > 0 && (
                   <span className={styles.eventCountBadge}>
-                    {startDayEvents.length}
+                    {dayEvents.length}
                   </span>
                 )}
 
@@ -307,12 +339,17 @@ export default function PersonalEventsCalendar() {
             </div>
             
             <div className={styles.eventList}>
-              {eventsData.filter(e => e.date === selectedDate.isoDate).map((e, idx) => (
-                <div key={idx} className={styles.eventItem}>
+              {eventsData
+                .filter((eventItem) => isDateWithinEvent(selectedDate.isoDate, eventItem))
+                .map((e, idx) => (
+                <div
+                  key={`${e.id ?? e.date ?? 'event'}-${e.end_date ?? e.date ?? 'single'}-${idx}`}
+                  className={styles.eventItem}
+                >
                   <div className={styles.eventTextWrapper}>
                     <span>{e.events}</span>
                     <div className={styles.eventActions}>
-                      {!e.is_schedule_event ? (
+                      {(!e.is_schedule_event && !e.events?.endsWith(' (Approved)')) ? (
                         <button
                           type="button"
                           className={styles.editButtonSmall}
@@ -321,7 +358,7 @@ export default function PersonalEventsCalendar() {
                           Edit
                         </button>
                       ) : null}
-                      {!e.is_schedule_event ? (
+                      {(!e.is_schedule_event && !e.events?.endsWith(' (Approved)')) ? (
                         <button
                           type="button"
                           className={styles.deleteButtonSmall}
@@ -334,12 +371,12 @@ export default function PersonalEventsCalendar() {
                     </div>
                   </div>
                   {e.end_date && e.end_date !== e.date && (
-                    <div className={styles.eventDateRange}>{e.date} to {e.end_date}</div>
+                    <div className={styles.eventDateRange}>{formatEventDateRange(e)}</div>
                   )}
                 </div>
               ))}
-              {eventsData.filter(e => e.date === selectedDate.isoDate).length === 0 && (
-                <p className={styles.noEvents}>No events starting on this date.</p>
+              {eventsData.filter((eventItem) => isDateWithinEvent(selectedDate.isoDate, eventItem)).length === 0 && (
+                <p className={styles.noEvents}>No events on this date.</p>
               )}
             </div>
 

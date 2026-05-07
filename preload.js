@@ -16,3 +16,8 @@ contextBridge.exposeInMainWorld('electronUpdater', {
     };
   },
 });
+
+contextBridge.exposeInMainWorld('electronPdf', {
+  openWithSystem: (pdfBytes, fileName) =>
+    ipcRenderer.invoke('pdf:open-with-system', pdfBytes, fileName),
+});

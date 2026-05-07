@@ -4,13 +4,11 @@ import { useCallback, useDeferredValue, useEffect, useId, useRef, useState } fro
 import {
   FiCheck,
   FiChevronDown,
-  FiDownload,
   FiEdit2,
   FiPlus,
   FiSave,
   FiSearch,
   FiTrash2,
-  FiUpload,
   FiX,
 } from 'react-icons/fi';
 import ToastStack from '@/components/shared/toast-stack';
@@ -163,111 +161,6 @@ function isPastSchedule(schedule, today = getTodayComparableDate()) {
   }
 
   return false;
-}
-
-function isStartingSoon(schedule, today = getTodayComparableDate()) {
-  const startDate = formatComparableDate(schedule.startDate);
-  
-  if (!startDate) {
-    return false;
-  }
-
-  const startValue = new Date(startDate).getTime();
-  const todayValue = new Date(today).getTime();
-  
-  if (Number.isNaN(startValue) || Number.isNaN(todayValue)) {
-    return false;
-  }
-
-  const diffTime = startValue - todayValue;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  return diffDays >= 0 && diffDays <= 3;
-}
-
-function escapeCsvValue(value) {
-  const text = String(value ?? '');
-
-  if (text.includes('"') || text.includes(',') || text.includes('\n')) {
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-
-  return text;
-}
-
-function parseCsvLine(line) {
-  const values = [];
-  let currentValue = '';
-  let isQuoted = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-
-    if (character === '"') {
-      if (isQuoted && line[index + 1] === '"') {
-        currentValue += '"';
-        index += 1;
-      } else {
-        isQuoted = !isQuoted;
-      }
-      continue;
-    }
-
-    if (character === ',' && !isQuoted) {
-      values.push(currentValue.trim());
-      currentValue = '';
-      continue;
-    }
-
-    currentValue += character;
-  }
-
-  values.push(currentValue.trim());
-  return values;
-}
-
-function parseSchedulesCsv(text) {
-  const normalizedText = String(text ?? '').replace(/^\uFEFF/, '');
-  const lines = normalizedText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!lines.length) {
-    return [];
-  }
-
-  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase());
-  const columnIndex = {
-    title: headers.indexOf('title'),
-    startDate: headers.indexOf('start_date'),
-    endDate: headers.indexOf('end_date'),
-    assignedTo: headers.indexOf('assigned_to'),
-    remarks: headers.indexOf('remarks'),
-  };
-
-  if (columnIndex.title === -1) {
-    throw new Error('The CSV template must include a title column.');
-  }
-
-  return lines.slice(1).map((line) => {
-    const values = parseCsvLine(line);
-    const assignedToValue =
-      columnIndex.assignedTo > -1 ? values[columnIndex.assignedTo] ?? '' : '';
-
-    return {
-      title: values[columnIndex.title] ?? '',
-      startDate: columnIndex.startDate > -1 ? values[columnIndex.startDate] ?? '' : '',
-      endDate: columnIndex.endDate > -1 ? values[columnIndex.endDate] ?? '' : '',
-      assignedTo: assignedToValue
-        ? assignedToValue
-            .split(',')
-            .map((value) => value.trim())
-            .filter(Boolean)
-        : [],
-      remarks: columnIndex.remarks > -1 ? values[columnIndex.remarks] ?? '' : '',
-    };
-  });
 }
 
 function buildNotificationFailureMessage(failures) {
@@ -448,7 +341,6 @@ function MultiSelectDropdown({
 export default function SchedulesClient({
   initialSchedules,
   activeUserNames,
-  currentUserEmail,
 }) {
   const assignableUserOptions = [ALL_EMPLOYEES_OPTION, ...activeUserNames];
   const [schedules, setSchedules] = useState(() => sortSchedules(initialSchedules));
@@ -461,13 +353,10 @@ export default function SchedulesClient({
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitLabel, setSubmitLabel] = useState('Saving...');
-  const [isImporting, setIsImporting] = useState(false);
-  const [importLabel, setImportLabel] = useState('Importing...');
   const [deletingScheduleId, setDeletingScheduleId] = useState(null);
   const [deleteCandidateSchedule, setDeleteCandidateSchedule] = useState(null);
   const [notificationFailures, setNotificationFailures] = useState([]);
   const [toasts, setToasts] = useState([]);
-  const importInputRef = useRef(null);
   const abortControllerRef = useRef(null);
 
   const showToast = useCallback((type, message, duration = 4200) => {
@@ -503,6 +392,40 @@ export default function SchedulesClient({
 
     setDeleteCandidateSchedule(null);
   }, [deletingScheduleId]);
+
+  const resetDialog = useCallback(() => {
+    setFormData(DEFAULT_FORM_DATA);
+    setFormErrors({});
+    setSubmitError('');
+    setIsSubmitting(false);
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    setIsCreateOpen(false);
+    setEditingScheduleId(null);
+    resetDialog();
+  }, [resetDialog]);
+
+  const openDialog = useCallback(() => {
+    setEditingScheduleId(null);
+    setFormData(DEFAULT_FORM_DATA);
+    setIsCreateOpen(true);
+    setFormErrors({});
+    setSubmitError('');
+  }, []);
+
+  const openEditDialog = useCallback((schedule) => {
+    setEditingScheduleId(schedule.id);
+    setFormData(buildFormDataFromSchedule(schedule));
+    setFormErrors({});
+    setSubmitError('');
+    setIsCreateOpen(true);
+  }, []);
 
   useEffect(() => {
     setSchedules(sortSchedules(initialSchedules));
@@ -542,168 +465,6 @@ export default function SchedulesClient({
 
     return normalizedSearchTerm ? matchesSearch : true;
   });
-
-  const resetDialog = () => {
-    setFormData(DEFAULT_FORM_DATA);
-    setFormErrors({});
-    setSubmitError('');
-    setIsSubmitting(false);
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-  };
-
-  const closeDialog = () => {
-    setIsCreateOpen(false);
-    setEditingScheduleId(null);
-    resetDialog();
-  };
-
-  const openDialog = () => {
-    setEditingScheduleId(null);
-    setFormData(DEFAULT_FORM_DATA);
-    setIsCreateOpen(true);
-    setFormErrors({});
-    setSubmitError('');
-  };
-
-  const openEditDialog = (schedule) => {
-    setEditingScheduleId(schedule.id);
-    setFormData(buildFormDataFromSchedule(schedule));
-    setFormErrors({});
-    setSubmitError('');
-    setIsCreateOpen(true);
-  };
-
-  const handleDownloadTemplate = () => {
-    const csvContent = [
-      ['title', 'start_date', 'end_date', 'assigned_to', 'remarks']
-        .map(escapeCsvValue)
-        .join(','),
-      [
-        'Training on R Programming',
-        '2026-04-01',
-        '',
-        'Christian A. Dacpano, Dickey T. Tompag',
-        'Bring laptops',
-      ]
-        .map(escapeCsvValue)
-        .join(','),
-    ].join('\n');
-
-    const csvBlob = new Blob([csvContent], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const downloadUrl = URL.createObjectURL(csvBlob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = 'schedules-template.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
-  };
-
-  const handleImportClick = () => {
-    importInputRef.current?.click();
-  };
-
-  const handleImportFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-
-    if (!file || isImporting) {
-      return;
-    }
-
-    setIsImporting(true);
-    setImportLabel('Reading file...');
-
-    try {
-      const fileText = await file.text();
-      const records = parseSchedulesCsv(fileText).filter(
-        (record) =>
-          record.title ||
-          record.startDate ||
-          record.endDate ||
-          record.assignedTo.length ||
-          record.remarks
-      );
-
-      if (!records.length) {
-        throw new Error('The CSV file does not contain any schedule rows.');
-      }
-
-      setImportLabel('Starting import...');
-
-      const response = await fetch('/api/schedules/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ records }),
-      });
-
-      const isJson = response.headers.get('content-type')?.includes('application/json');
-      let payload = null;
-
-      if (!response.ok) {
-        payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || 'Unable to import schedules right now.');
-      }
-
-      if (isJson) {
-        payload = await response.json().catch(() => null);
-      } else {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\\n');
-          buffer = lines.pop(); // keep the last partial line if any
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const data = JSON.parse(line);
-              if (data.type === 'progress') {
-                setImportLabel(data.message);
-              } else if (data.type === 'success') {
-                payload = data;
-              } else if (data.type === 'error') {
-                throw new Error(data.error);
-              }
-            } catch (err) {
-              if (err.message && err.message !== 'Unexpected end of JSON input') {
-                throw err;
-              }
-            }
-          }
-        }
-      }
-
-      if (Array.isArray(payload?.schedules) && payload.schedules.length) {
-        setSchedules((currentSchedules) =>
-          sortSchedules([...currentSchedules, ...payload.schedules])
-        );
-      }
-
-      showToast('success', payload?.message || 'Schedules imported successfully.');
-      if (payload?.notificationFailures?.length) {
-        openNotificationFailureDialog(payload.notificationFailures);
-      }
-    } catch (error) {
-      showToast('error', error.message || 'Unable to import schedules right now.', 5200);
-    } finally {
-      setIsImporting(false);
-    }
-  };
 
   const validateForm = () => {
     const nextErrors = {};
@@ -962,30 +723,6 @@ export default function SchedulesClient({
                   <span>Past</span>
                 </button>
               </div>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className={styles.hiddenInput}
-                onChange={handleImportFile}
-              />
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={handleDownloadTemplate}
-              >
-                <FiDownload aria-hidden="true" />
-                <span>Download Template</span>
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={handleImportClick}
-                disabled={isImporting}
-              >
-                <FiUpload aria-hidden="true" />
-                <span>{isImporting ? importLabel : 'Import CSV'}</span>
-              </button>
               <button type="button" className={styles.primaryButton} onClick={openDialog}>
                 <FiPlus aria-hidden="true" />
                 <span>Add Schedule</span>
@@ -1276,7 +1013,7 @@ export default function SchedulesClient({
 
             <div className={styles.confirmDeleteBody}>
               <p className={styles.confirmDeleteMessage}>
-                Delete schedule "{deleteCandidateSchedule.title || 'Untitled schedule'}"?
+                Delete schedule &quot;{deleteCandidateSchedule.title || 'Untitled schedule'}&quot;?
               </p>
               <p className={styles.confirmDeleteWarning}>
                 Date: {formatDateRange(deleteCandidateSchedule.startDate, deleteCandidateSchedule.endDate)}

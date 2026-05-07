@@ -14,7 +14,6 @@ export default async function EventPage() {
     <SchedulesClient
       initialSchedules={schedules}
       activeUserNames={activeUserNames}
-      currentUserEmail=""
     />
   );
 }

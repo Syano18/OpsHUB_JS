@@ -84,21 +84,6 @@ function getEntryDateParts(timestamp) {
   };
 }
 
-function isCurrentMonthEntry(timestamp) {
-  const dateParts = getEntryDateParts(timestamp);
-
-  if (!dateParts) {
-    return false;
-  }
-
-  const now = new Date();
-
-  return (
-    dateParts.year === now.getFullYear() &&
-    dateParts.month === now.getMonth() + 1
-  );
-}
-
 function formatMonthValue(month) {
   return String(month).padStart(2, '0');
 }

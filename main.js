@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -13,6 +13,7 @@ let isServerReadyState = false;
 const PORT = 3000;
 const APP_URL = `http://localhost:${PORT}/login`;
 const HEALTHCHECK_URL = APP_URL;
+const CSC_WARMUP_URL = `http://127.0.0.1:${PORT}/api/status/warmup`;
 const MAX_RETRIES = 120;
 const RETRY_DELAY = 500;
 let updaterState = {
@@ -22,6 +23,7 @@ let updaterState = {
   message: '',
   error: null,
 };
+const SERVER_ONLY_MODE = process.argv.includes('--server-only');
 
 function getDebugLogPath() {
   const localAppData = process.env.LOCALAPPDATA || process.cwd();
@@ -321,7 +323,9 @@ function loadRuntimeEnv(appPath) {
   return env;
 }
 
-function startEmbeddedServer() {
+function startEmbeddedServer(options = {}) {
+  const { detached = false, pipeLogs = true } = options;
+
   if (!app.isPackaged) {
     return;
   }
@@ -385,17 +389,24 @@ function startEmbeddedServer() {
       PORT: String(PORT),
       HOSTNAME: '127.0.0.1',
     },
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: detached ? 'ignore' : ['pipe', 'pipe', 'pipe'],
+    detached,
     windowsHide: true,
   });
 
-  if (serverProcess.stdout) {
+  if (detached) {
+    serverProcess.unref();
+    logDebug('Detached background server process started', String(serverProcess.pid));
+    return;
+  }
+
+  if (pipeLogs && serverProcess.stdout) {
     serverProcess.stdout.on('data', (data) => {
       logDebug('[Server]', data.toString().trim());
     });
   }
 
-  if (serverProcess.stderr) {
+  if (pipeLogs && serverProcess.stderr) {
     serverProcess.stderr.on('data', (data) => {
       logDebug('[Server Error]', data.toString().trim());
     });
@@ -416,6 +427,24 @@ function startEmbeddedServer() {
   });
 }
 
+function configureServerAutoStart() {
+  if (!app.isPackaged || process.platform !== 'win32') {
+    return;
+  }
+
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: true,
+      args: ['--server-only'],
+      path: process.execPath,
+    });
+    logDebug('Configured login autostart for server-only mode');
+  } catch (error) {
+    logDebug('Failed configuring login autostart', error.message);
+  }
+}
+
 async function waitForServer(retries = 0) {
   if (retries > MAX_RETRIES) {
     logDebug('Failed to connect to server after maximum retries');
@@ -431,6 +460,41 @@ async function waitForServer(retries = 0) {
 
   await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
   return waitForServer(retries + 1);
+}
+
+function requestServerWarmup() {
+  return new Promise((resolve) => {
+    const req = http.get(CSC_WARMUP_URL, (res) => {
+      const chunks = [];
+
+      res.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+
+      res.on('end', () => {
+        const bodyText = Buffer.concat(chunks).toString('utf8');
+
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          logDebug('Server warmup completed', bodyText || '{}');
+        } else {
+          logDebug('Server warmup failed', `${res.statusCode || 0} ${bodyText}`);
+        }
+
+        resolve();
+      });
+    });
+
+    req.on('error', (error) => {
+      logDebug('Server warmup request error', error.message);
+      resolve();
+    });
+
+    req.setTimeout(5000, () => {
+      req.destroy();
+      logDebug('Server warmup timed out');
+      resolve();
+    });
+  });
 }
 
 function createWindow() {
@@ -532,10 +596,30 @@ function createWindow() {
 
 app.on('ready', async () => {
   logDebug('Electron app ready event fired');
+  configureServerAutoStart();
+
+  if (SERVER_ONLY_MODE) {
+    const serverAlreadyRunning = await isServerReady();
+    if (serverAlreadyRunning) {
+      logDebug('Server-only mode detected running backend, exiting.');
+      app.quit();
+      return;
+    }
+
+    startEmbeddedServer({ detached: true, pipeLogs: false });
+    app.quit();
+    return;
+  }
+
   Menu.setApplicationMenu(null);
   createWindow();
   initializeAutoUpdater();
-  startEmbeddedServer();
+  const serverAlreadyRunning = await isServerReady();
+  if (serverAlreadyRunning) {
+    logDebug('Detected existing local server. Reusing running instance.');
+  } else {
+    startEmbeddedServer();
+  }
   logDebug('Waiting for server to start');
 
   const ready = await waitForServer();
@@ -543,6 +627,7 @@ app.on('ready', async () => {
   if (ready) {
     isServerReadyState = true;
     logDebug('Server started successfully. Loading app into window.');
+    await requestServerWarmup();
     loadAppIntoWindow();
   } else {
     logDebug('Server failed to start within timeout period.');
@@ -558,7 +643,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  if (serverProcess) {
+  if (serverProcess && !app.isPackaged) {
     serverProcess.kill();
     serverProcess = null;
   }
@@ -624,4 +709,41 @@ ipcMain.handle('updater:install-update', async () => {
   });
 
   return { ok: true };
+});
+
+ipcMain.handle('pdf:open-with-system', async (_event, pdfBytes, fileName) => {
+  try {
+    const saveDir = 'C:\\OpsHUB\\Filled Leave';
+
+    logDebug('Creating PDF save directory', saveDir);
+
+    // Create directory if it doesn't exist
+    fs.mkdirSync(saveDir, { recursive: true });
+
+    const pdfPath = path.join(saveDir, fileName || 'document.pdf');
+
+    logDebug('Saving PDF to', pdfPath);
+
+    // Write PDF bytes to file
+    const buffer = Buffer.from(pdfBytes);
+    await new Promise((resolve, reject) => {
+      fs.writeFile(pdfPath, buffer, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+    logDebug('Opening PDF with system viewer', pdfPath);
+
+    // Open with system default application
+    await shell.openPath(pdfPath);
+
+    return { ok: true, savedPath: pdfPath };
+  } catch (error) {
+    logDebug('Failed to save and open PDF', error.message);
+    return {
+      ok: false,
+      error: error?.message || 'Failed to save and open PDF',
+    };
+  }
 });
